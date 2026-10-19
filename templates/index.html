@@ -67,8 +67,6 @@ svg{display:block;flex:none}
 .brand{display:flex;align-items:center;justify-content:space-between;padding:16px 14px 8px;font-weight:800;font-size:17px;letter-spacing:-.02em}
 .brand-left{display:flex;align-items:center;gap:10px}
 .brand-text{background:linear-gradient(135deg,var(--accent),var(--accent-2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-.logo-3d{width:34px;height:34px;object-fit:contain;filter:drop-shadow(0 4px 8px rgba(79,70,229,.25));transition:transform .2s}
-.logo-3d:hover{transform:scale(1.08) rotate(-4deg)}
 
 .side-top{padding:8px 12px;display:grid;gap:8px}
 .btn-new{display:flex;align-items:center;gap:9px;padding:10px 14px;border:1px solid var(--line);background:var(--surface);
@@ -110,28 +108,23 @@ svg{display:block;flex:none}
 .scroll{flex:1;overflow:auto}
 .col{max-width:800px;margin:0 auto;padding:8px 20px 32px}
 
-/* Empty State with 3D Icons */
-.empty{max-width:580px;margin:12vh auto 0;padding:0 20px;text-align:center;animation:fadeIn .35s ease}
-.empty-hero{position:relative;width:96px;height:96px;margin:0 auto 18px;display:grid;place-items:center}
-.empty-hero::before{content:"";position:absolute;inset:8px;background:linear-gradient(135deg,var(--accent),var(--accent-2));filter:blur(24px);opacity:.28;border-radius:50%}
-.empty-hero img{width:84px;height:84px;object-fit:contain;position:relative;animation:float3d 4s ease-in-out infinite}
+/* Empty State Clean */
+.empty{max-width:580px;margin:14vh auto 0;padding:0 20px;text-align:center;animation:fadeIn .35s ease}
 .empty h1{font-size:28px;font-weight:800;letter-spacing:-.025em;margin:0 0 8px}
 .empty p{color:var(--muted);margin:0 0 22px;font-size:15px}
 .caps{display:flex;flex-wrap:wrap;justify-content:center;gap:10px}
 .cap-pill{display:inline-flex;align-items:center;gap:8px;padding:7px 14px;border-radius:99px;background:var(--surface);border:1px solid var(--line);font-size:13px;font-weight:500;color:var(--muted);box-shadow:0 1px 2px rgba(0,0,0,.02)}
-.cap-pill img{width:20px;height:20px;object-fit:contain}
 
-@keyframes float3d{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
 @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 
-/* Messages */
+/* Messages (Tanpa Avatar AI) */
 .msg{margin:22px 0;display:flex;gap:14px}
 .msg.user{justify-content:flex-end}
 .msg.user .user-wrap{max-width:85%;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
 .msg.user .body{background:linear-gradient(135deg,var(--accent),var(--accent-2));color:#fff;padding:11px 16px;border-radius:20px 20px 4px 20px;white-space:pre-wrap;word-break:break-word;box-shadow:0 4px 12px rgba(79,70,229,.2)}
-.avatar{width:32px;height:32px;border-radius:10px;background:var(--accent-soft);display:grid;place-items:center;margin-top:2px;flex:none;border:1px solid var(--line)}
-.avatar img{width:24px;height:24px;object-fit:contain}
-.bot-main{flex:1;min-width:0}
+
+.msg.bot{justify-content:flex-start;padding-left:0}
+.bot-main{flex:1;min-width:0;max-width:90%}
 .body{word-break:break-word;overflow-wrap:anywhere}
 .body>:first-child{margin-top:0}.body>:last-child{margin-bottom:0}
 .body p{margin:.65em 0}
@@ -148,7 +141,6 @@ svg{display:block;flex:none}
 .msg-files{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
 .msg-file{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:6px 11px;font-size:12.5px;color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.04)}
 .msg-file img.thumb{width:34px;height:34px;object-fit:cover;border-radius:7px}
-.msg-file img.ico3d{width:22px;height:22px;object-fit:contain}
 .msg-file .f-meta{display:flex;flex-direction:column;line-height:1.25}
 .msg-file .f-name{font-weight:600;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .msg-file .f-size{font-size:11px;color:var(--muted)}
@@ -197,7 +189,6 @@ svg{display:block;flex:none}
 .composer{padding:6px 16px 16px}
 .comp-wrap{max-width:800px;margin:0 auto;display:flex;flex-direction:column;gap:8px}
 
-/* Dynamic Contextual Suggestions */
 .dyn-prompts{display:flex;gap:7px;overflow-x:auto;padding:2px 2px;scrollbar-width:none}
 .dyn-prompts::-webkit-scrollbar{display:none}
 .dyn-prompts:empty{display:none}
@@ -211,7 +202,6 @@ svg{display:block;flex:none}
 .att-tray:empty{display:none}
 .att-card{display:flex;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--line);border-radius:12px;padding:5px 8px 5px 6px;font-size:12.5px;position:relative;animation:fadeIn .15s ease}
 .att-card img.thumb{width:32px;height:32px;object-fit:cover;border-radius:7px}
-.att-card img.ico3d{width:24px;height:24px;object-fit:contain}
 .att-card .meta{display:flex;flex-direction:column;line-height:1.2;max-width:160px}
 .att-card .name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .att-card .sub{font-size:11px;color:var(--muted)}
@@ -227,11 +217,10 @@ svg{display:block;flex:none}
 .send:disabled{opacity:.3;cursor:default}
 .hint{max-width:800px;margin:4px auto 0;text-align:center;font-size:12px;color:var(--muted)}
 
-/* Drag & Drop Overlay */
+/* Dropzone */
 .dropzone{position:fixed;inset:0;background:rgba(79,70,229,.12);backdrop-filter:blur(4px);z-index:50;display:none;place-items:center;padding:24px}
 .dropzone.show{display:grid}
 .drop-card{background:var(--surface);border:2px dashed var(--accent);border-radius:24px;padding:36px 48px;text-align:center;box-shadow:var(--shadow-lg)}
-.drop-card img{width:64px;height:64px;margin:0 auto 12px;object-fit:contain}
 .drop-card h3{margin:0 0 4px;font-size:18px}
 .drop-card p{margin:0;color:var(--muted);font-size:13.5px}
 
@@ -285,7 +274,6 @@ svg{display:block;flex:none}
   .backdrop.show{display:block;position:fixed;inset:0;background:rgba(10,12,18,.45);z-index:15}
   .item .acts{display:flex}
   .item .cnt{display:none}
-  .avatar{display:none}
 }
 </style>
 </head>
@@ -296,6 +284,7 @@ svg{display:block;flex:none}
       <div class="brand-left">
         <span class="brand-text">ER Agent</span>
       </div>
+      <button class="ico-btn" id="collapseSideBtn" title="Sembunyikan sidebar (Ctrl+B)" aria-label="Sembunyikan sidebar"></button>
     </div>
     <div class="side-top">
       <button class="btn-new" id="newChat"></button>
@@ -338,7 +327,6 @@ svg{display:block;flex:none}
 
 <div class="dropzone" id="dropzone">
   <div class="drop-card">
-    <img id="dropIcon" alt="Drop file">
     <h3>Lepaskan file di sini</h3>
     <p>Mendukung kode, CSV, PDF, Word, Excel, dan gambar untuk dianalisis langsung oleh ER Agent</p>
   </div>
@@ -364,16 +352,6 @@ const store = {
 const uid = () => Math.random().toString(36).slice(2, 10);
 const escapeHtml = s => s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function el(tag, cls, text){ const e = document.createElement(tag); if(cls) e.className = cls; if(text != null) e.textContent = text; return e; }
-
-/* 3D Icons from 3dicons.co official repository (via jsDelivr CDN) */
-const ICONS_3D = {
-  bot: 'https://cdn.jsdelivr.net/gh/realvjy/3dicons@main/png/dynamic/computer-dynamic-color.png',
-  rocket: 'https://cdn.jsdelivr.net/gh/realvjy/3dicons@main/png/dynamic/rocket-dynamic-color.png',
-  folder: 'https://cdn.jsdelivr.net/gh/realvjy/3dicons@main/png/dynamic/folder-dynamic-color.png',
-  file: 'https://cdn.jsdelivr.net/gh/realvjy/3dicons@main/png/dynamic/file-text-dynamic-color.png',
-  magic: 'https://cdn.jsdelivr.net/gh/realvjy/3dicons@main/png/dynamic/magic-trick-dynamic-color.png',
-  chart: 'https://cdn.jsdelivr.net/gh/realvjy/3dicons@main/png/dynamic/chart-dynamic-color.png'
-};
 
 const ICONS = {
   plus:'<path d="M12 5v14M5 12h14"/>',
@@ -421,7 +399,7 @@ const DEFAULTS = {theme: 'auto', allowActions: false, disabledTools: [], instruc
 const state = {
   chats: store.get('bc.chats', []), projects: store.get('bc.projects', []), activeId: store.get('bc.active', null),
   settings: Object.assign({}, DEFAULTS, store.get('bc.settings', {})), config: {models: [], tools: []}, query: '',
-  attachments: [] // {id, name, size, kind: 'image'|'text', mediaType, dataUrl, textContent, loading}
+  attachments: []
 };
 let busy = false, controller = null, raf = 0, liveEl = null, liveMsg = null;
 const active = () => state.chats.find(c => c.id === state.activeId);
@@ -555,7 +533,7 @@ function renderAttachments(){
     if(a.kind === 'image' && a.dataUrl){
       const img = el('img', 'thumb'); img.src = a.dataUrl; img.alt = a.name; card.append(img);
     } else {
-      const img = el('img', 'ico3d'); img.src = ICONS_3D.file; img.alt = 'File'; card.append(img);
+      const icoF = el('span'); icoF.textContent = '📄'; card.append(icoF);
     }
     const meta = el('div', 'meta');
     meta.append(el('span', 'name', a.name), el('span', 'sub', a.loading ? 'Mengekstrak…' : formatBytes(a.size)));
@@ -772,28 +750,22 @@ function renderSidebar(){
   recent.forEach(c => box.append(chatRow(c)));
 }
 
-/* ------------------------------ render: messages (Clean Empty State) ------------------------------ */
+/* ------------------------------ render: messages (Clean ChatGPT Style) ------------------------------ */
 function renderEmpty(){
   const w = el('div', 'empty');
-  const hero = el('div', 'empty-hero');
-  const img = el('img'); img.src = ICONS_3D.rocket; img.alt = 'ER Agent';
-  hero.append(img);
   const c = active(), p = c && project(c.projectId);
   w.append(
-    hero,
     el('h1', '', p ? p.name : 'ER Agent Siap Membantu'),
     el('p', '', p ? 'Instruksi khusus proyek aktif pada ruang obrolan ini.' : 'Ketik pertanyaan di bawah atau lampirkan dokumen, dataset, kode, maupun gambar untuk dianalisis secara mendalam.')
   );
   const caps = el('div', 'caps');
   const items = [
-    [ICONS_3D.file, 'Analisis Dokumen & Kode'],
-    [ICONS_3D.chart, 'Kalkulasi & Data Insight'],
-    [ICONS_3D.magic, 'Eksekusi Tool & Otomatisasi']
+    'Analisis Dokumen & Kode',
+    'Kalkulasi & Data Insight',
+    'Eksekusi Tool & Otomatisasi'
   ];
-  for(const [src, label] of items){
-    const pill = el('span', 'cap-pill');
-    const i = el('img'); i.src = src; i.alt = '';
-    pill.append(i, document.createTextNode(label));
+  for(const label of items){
+    const pill = el('span', 'cap-pill', label);
     caps.append(pill);
   }
   w.append(caps);
@@ -811,7 +783,7 @@ function renderMsg(m, opts = {}){
         if(f.kind === 'image' && f.dataUrl){
           const im = el('img', 'thumb'); im.src = f.dataUrl; chip.append(im);
         } else {
-          const im = el('img', 'ico3d'); im.src = ICONS_3D.file; chip.append(im);
+          const icoF = el('span'); icoF.textContent = '📄'; chip.append(icoF);
         }
         const meta = el('div', 'f-meta');
         meta.append(el('span', 'f-name', f.name), el('span', 'f-size', formatBytes(f.size || 0)));
@@ -826,10 +798,8 @@ function renderMsg(m, opts = {}){
     row.append(wrap);
     return row;
   }
-  const av = el('div', 'avatar');
-  const avImg = el('img'); avImg.src = ICONS_3D.bot; avImg.alt = 'ER';
-  av.append(avImg); row.append(av);
-
+  
+  // Bot message without avatar image
   const main = el('div', 'bot-main'), body = el('div', 'body' + (opts.live && !m.error ? ' live' : '') + (m.content ? ' has' : ''));
   for(const t of m.tools || []){
     const d = el('details', 'tool ' + t.status); d.open = !!t.open; d.addEventListener('toggle', () => { t.open = d.open; });
@@ -848,6 +818,7 @@ function renderMsg(m, opts = {}){
   }
   row.append(main); return row;
 }
+
 function renderMessages(){
   const box = $('#msgs'); box.replaceChildren(); const c = active();
   if(!c || !c.messages.length){ box.append(renderEmpty()); return; }
@@ -893,7 +864,6 @@ async function send(overrideText){
   if(!active()) newChat();
   const c = active();
 
-  // Build prompt payload combining text attachments + user prompt
   let combinedText = rawText || (readyAtts.length ? 'Tolong analisis file yang dilampirkan ini secara menyeluruh.' : '');
   const textDocs = readyAtts.filter(a => a.kind === 'text' && a.textContent);
   if(textDocs.length){
@@ -1054,8 +1024,6 @@ function autosize(){
 
 async function init(){
   try{ localStorage.removeItem('bc.pw'); }catch{}
-  $('#brandLogo').src = ICONS_3D.bot;
-  $('#dropIcon').src = ICONS_3D.folder;
   $('#collapseSideBtn').append(ico('collapse', 18));
   $('#toggleSideBtn').append(ico('sidebar', 19));
   $('#attachBtn').append(ico('paperclip', 18));
@@ -1087,7 +1055,6 @@ async function init(){
   $('#loginForm').onsubmit = login;
   $('#logout').onclick = async () => { try{ await fetch('/api/logout', {method: 'POST'}); }catch{} showGate(); };
 
-  // File attach & Drag-and-Drop handlers
   $('#attachBtn').onclick = () => $('#fileInput').click();
   $('#fileInput').onchange = e => { if(e.target.files.length) handleFiles(e.target.files); e.target.value = ''; };
 
