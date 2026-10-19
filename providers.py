@@ -1,23 +1,29 @@
-"""Lapisan model: GPT-OSS via Chat Completions, Claude via Anthropic Messages.
+"""Lapisan model: GPT-OSS via Chat Completions (Mantle), Claude via Anthropic Messages.
 
-Keduanya lewat Amazon Bedrock Mantle (bedrock-mantle.<region>.api.aws),
-diautentikasi dengan Bedrock API key sebagai Bearer token.
-Setiap fungsi run_* adalah generator yang menghasilkan event untuk UI:
+Claude: karena ID model dan endpoint yang tersedia berbeda-beda per region/akun,
+kode ini mencoba beberapa kombinasi (bedrock-runtime / bedrock-mantle x ID dengan
+prefix global./jp./au./us./polos) dan mengingat kombinasi yang berhasil.
+Hasil percobaan bisa dilihat lewat Pengaturan -> Tes koneksi model.
+
+Event yang dihasilkan untuk UI:
   {"type": "text", "delta": "..."}
   {"type": "tool_call", "id", "name", "args"}
   {"type": "tool_result", "id", "name", "result"}
 """
 import json
 import os
+import re
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
+import anthropic
 from anthropic import Anthropic
 from openai import OpenAI
 
 from tools import execute_tool, tool_specs
 
-MAX_STEPS = 6      # batas putaran model -> tool -> model
+MAX_STEPS = 6
 MAX_TOKENS = 4096
 
 MODELS = {
@@ -34,47 +40,97 @@ MODELS = {
     "claude-sonnet-4-6": {
         "label": "Claude Sonnet 4.6",
         "provider": "anthropic",
-        "id": os.getenv("MODEL_CLAUDE_SONNET", "anthropic.claude-sonnet-4-6"),
+        "env": "MODEL_CLAUDE_SONNET",
+        "ids": [
+            "global.anthropic.claude-sonnet-4-6",
+            "jp.anthropic.claude-sonnet-4-6",
+            "au.anthropic.claude-sonnet-4-6",
+            "us.anthropic.claude-sonnet-4-6",
+            "anthropic.claude-sonnet-4-6",
+            "anthropic.claude-sonnet-4-6-v1",
+        ],
     },
     "claude-haiku-4-5": {
         "label": "Claude Haiku 4.5",
         "provider": "anthropic",
-        "id": os.getenv("MODEL_CLAUDE_HAIKU", "anthropic.claude-haiku-4-5"),
+        "env": "MODEL_CLAUDE_HAIKU",
+        "ids": [
+            "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+            "jp.anthropic.claude-haiku-4-5-20251001-v1:0",
+            "au.anthropic.claude-haiku-4-5-20251001-v1:0",
+            "apac.anthropic.claude-haiku-4-5-20251001-v1:0",
+            "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+            "anthropic.claude-haiku-4-5-20251001-v1:0",
+            "anthropic.claude-haiku-4-5",
+        ],
     },
 }
 
+_RESOLVED: dict[str, tuple[str, str]] = {}  # model_key -> (base_url, model_id) yang terbukti jalan
+_RETRYABLE = (anthropic.NotFoundError, anthropic.BadRequestError, anthropic.PermissionDeniedError)
 
-def system_prompt() -> str:
+
+def system_prompt(extra: str = "") -> str:
     now = datetime.now(ZoneInfo("Asia/Jakarta")).strftime("%A, %d %B %Y %H:%M WIB")
-    return (
+    base = (
         "Kamu adalah asisten AI yang ringkas, jujur, dan membantu. "
-        "Balas dalam bahasa yang dipakai pengguna. Gunakan format Markdown seperlunya. "
+        "Balas dalam bahasa yang dipakai pengguna. Gunakan Markdown: tabel bila membandingkan data, "
+        "blok kode dengan nama bahasa, dan LaTeX untuk rumus ($...$ inline, $$...$$ blok). "
         "Pakai tool bila membantu dan jangan mengarang hasil tool. "
         "Untuk aksi yang mengubah sesuatu (mis. menjalankan workflow CI/CD), "
         "jelaskan dulu apa yang akan dilakukan, lalu laporkan hasilnya. "
         f"Waktu sekarang: {now}."
     )
+    if extra.strip():
+        base += "\n\nInstruksi tambahan dari pengguna/proyek:\n" + extra.strip()
+    return base
 
 
+# --------------------------------------------------------------------------
+# Klien & endpoint
+# --------------------------------------------------------------------------
 def _base_url() -> str:
     return os.environ["BEDROCK_BASE_URL"].rstrip("/")
 
 
-def _openai_client() -> OpenAI:
-    return OpenAI(api_key=os.environ["BEDROCK_API_KEY"], base_url=_base_url(), timeout=55, max_retries=1)
+def _openai_client(timeout: float = 55, retries: int = 1) -> OpenAI:
+    return OpenAI(api_key=os.environ["BEDROCK_API_KEY"], base_url=_base_url(), timeout=timeout, max_retries=retries)
 
 
-def _anthropic_client() -> Anthropic:
-    root = _base_url()
-    if root.endswith("/v1"):
-        root = root[:-3]
-    # SDK menambahkan /v1/messages -> .../anthropic/v1/messages
-    return Anthropic(
-        auth_token=os.environ["BEDROCK_API_KEY"],
-        base_url=f"{root}/anthropic",
-        timeout=55,
-        max_retries=1,
-    )
+def _region() -> str:
+    m = re.search(r"bedrock-mantle\.([a-z0-9-]+)\.api\.aws", os.getenv("BEDROCK_BASE_URL", ""))
+    return m.group(1) if m else os.getenv("AWS_REGION", "us-east-1")
+
+
+def _anthropic_bases() -> list[str]:
+    explicit = os.getenv("ANTHROPIC_BASE_URL", "").rstrip("/")
+    if explicit:
+        return [explicit]
+    r = _region()
+    return [
+        f"https://bedrock-runtime.{r}.amazonaws.com/anthropic",
+        f"https://bedrock-mantle.{r}.api.aws/anthropic",
+    ]
+
+
+def claude_candidates(key: str) -> list[tuple[str, str]]:
+    cfg = MODELS[key]
+    ids = list(cfg["ids"])
+    override = os.getenv(cfg["env"], "").strip()
+    if override:
+        ids = [override] + [i for i in ids if i != override]
+    out = []
+    for base in _anthropic_bases():
+        for mid in ids:
+            if "bedrock-mantle" in base and not mid.startswith("anthropic."):
+                continue  # Mantle memakai ID polos, bukan inference profile
+            out.append((base, mid))
+    return out
+
+
+def _anthropic_client(base: str, timeout: float = 55, retries: int = 1) -> Anthropic:
+    # Bedrock API key dikirim sebagai x-api-key; SDK menambahkan /v1/messages.
+    return Anthropic(api_key=os.environ["BEDROCK_API_KEY"], base_url=base, timeout=timeout, max_retries=retries)
 
 
 def _parse_args(raw: str) -> dict:
@@ -85,24 +141,23 @@ def _parse_args(raw: str) -> dict:
         return {}
 
 
-def _run_tool(call_id: str, name: str, args: dict, allow_actions: bool):
-    """Generator kecil: yield event tool_call + tool_result, lalu return string hasil."""
+def _run_tool(call_id, name, args, allow_actions, enabled):
     yield {"type": "tool_call", "id": call_id, "name": name, "args": args}
-    result = execute_tool(name, args, allow_actions)
+    result = execute_tool(name, args, allow_actions, enabled)
     yield {"type": "tool_result", "id": call_id, "name": name, "result": result[:3000]}
     return result
 
 
 # --------------------------------------------------------------------------
-# GPT-OSS (OpenAI-compatible Chat Completions)
+# GPT-OSS (OpenAI-compatible)
 # --------------------------------------------------------------------------
-def run_openai(model_id: str, history: list[dict], allow_actions: bool):
+def run_openai(model_id, history, allow_actions, enabled, extra):
     client = _openai_client()
     tools = [
         {"type": "function", "function": {"name": t["name"], "description": t["description"], "parameters": t["schema"]}}
-        for t in tool_specs(allow_actions)
+        for t in tool_specs(allow_actions, enabled)
     ]
-    msgs = [{"role": "system", "content": system_prompt()}] + history
+    msgs = [{"role": "system", "content": system_prompt(extra)}] + history
 
     for _ in range(MAX_STEPS):
         kwargs = {"model": model_id, "messages": msgs, "stream": True}
@@ -140,7 +195,7 @@ def run_openai(model_id: str, history: list[dict], allow_actions: bool):
             ],
         })
         for c in ordered:
-            result = yield from _run_tool(c["id"], c["name"], _parse_args(c["args"]), allow_actions)
+            result = yield from _run_tool(c["id"], c["name"], _parse_args(c["args"]), allow_actions, enabled)
             msgs.append({"role": "tool", "tool_call_id": c["id"], "content": result})
         if text:
             yield {"type": "text", "delta": "\n\n"}
@@ -149,18 +204,18 @@ def run_openai(model_id: str, history: list[dict], allow_actions: bool):
 
 
 # --------------------------------------------------------------------------
-# Claude (Anthropic Messages API di Bedrock Mantle)
+# Claude (Anthropic Messages API)
 # --------------------------------------------------------------------------
-def run_anthropic(model_id: str, history: list[dict], allow_actions: bool):
-    client = _anthropic_client()
+def run_anthropic(base, model_id, history, allow_actions, enabled, extra):
+    client = _anthropic_client(base)
     tools = [
         {"name": t["name"], "description": t["description"], "input_schema": t["schema"]}
-        for t in tool_specs(allow_actions)
+        for t in tool_specs(allow_actions, enabled)
     ]
     msgs = list(history)
 
     for _ in range(MAX_STEPS):
-        kwargs = {"model": model_id, "max_tokens": MAX_TOKENS, "system": system_prompt(), "messages": msgs}
+        kwargs = {"model": model_id, "max_tokens": MAX_TOKENS, "system": system_prompt(extra), "messages": msgs}
         if tools:
             kwargs["tools"] = tools
 
@@ -183,7 +238,7 @@ def run_anthropic(model_id: str, history: list[dict], allow_actions: bool):
 
         for b in final.content:
             if b.type == "tool_use":
-                result = yield from _run_tool(b.id, b.name, dict(b.input or {}), allow_actions)
+                result = yield from _run_tool(b.id, b.name, dict(b.input or {}), allow_actions, enabled)
                 results.append({"type": "tool_result", "tool_use_id": b.id, "content": result})
         msgs.append({"role": "user", "content": results})
         if had_text:
@@ -192,7 +247,83 @@ def run_anthropic(model_id: str, history: list[dict], allow_actions: bool):
     yield {"type": "text", "delta": "\n\n_(Batas langkah tool tercapai.)_"}
 
 
-def run_chat(model_key: str, history: list[dict], allow_actions: bool):
+def run_chat(model_key, history, allow_actions=False, enabled=None, extra=""):
     cfg = MODELS[model_key]
-    runner = run_anthropic if cfg["provider"] == "anthropic" else run_openai
-    yield from runner(cfg["id"], history, allow_actions)
+    if cfg["provider"] == "openai":
+        yield from run_openai(cfg["id"], history, allow_actions, enabled, extra)
+        return
+
+    cands = claude_candidates(model_key)
+    hit = _RESOLVED.get(model_key)
+    if hit:
+        cands = [hit] + [c for c in cands if c != hit]
+
+    attempts = []
+    for base, mid in cands:
+        started = False
+        try:
+            for ev in run_anthropic(base, mid, history, allow_actions, enabled, extra):
+                started = True
+                yield ev
+            _RESOLVED[model_key] = (base, mid)
+            return
+        except _RETRYABLE as e:
+            if started:
+                raise
+            host = base.split("//", 1)[1].split("/", 1)[0]
+            attempts.append(f"- {host} | {mid} -> {e.status_code}")
+    raise RuntimeError(
+        "Tidak ada kombinasi endpoint/ID Claude yang berhasil:\n" + "\n".join(attempts[:14])
+        + "\n\nBuka Pengaturan -> Tes koneksi model untuk detail, dan pastikan akses model "
+        "Anthropic sudah diaktifkan di Bedrock console."
+    )
+
+
+# --------------------------------------------------------------------------
+# Diagnosa koneksi
+# --------------------------------------------------------------------------
+def _short(e: Exception) -> str:
+    msg = getattr(e, "message", None) or str(e)
+    return re.sub(r"\s+", " ", msg)[:140]
+
+
+def diagnose() -> list[dict]:
+    def probe(task):
+        key, base, mid = task
+        try:
+            _anthropic_client(base, timeout=12, retries=0).messages.create(
+                model=mid, max_tokens=1, messages=[{"role": "user", "content": "hi"}]
+            )
+            return "ok"
+        except anthropic.APIStatusError as e:
+            return f"{e.status_code}: {_short(e)}"
+        except Exception as e:
+            return f"{type(e).__name__}: {_short(e)}"
+
+    tasks = [(k, b, m) for k, c in MODELS.items() if c["provider"] == "anthropic" for b, m in claude_candidates(k)]
+    with ThreadPoolExecutor(max_workers=13) as pool:
+        outcomes = list(pool.map(probe, tasks))
+
+    report = []
+    for key, cfg in MODELS.items():
+        if cfg["provider"] == "anthropic":
+            att = [
+                {"base": b, "id": m, "result": r}
+                for (k, b, m), r in zip(tasks, outcomes) if k == key
+            ]
+            good = next((a for a in att if a["result"] == "ok"), None)
+            if good:
+                _RESOLVED[key] = (good["base"], good["id"])
+            report.append({"model": key, "label": cfg["label"], "ok": bool(good),
+                           "using": f'{good["base"]} | {good["id"]}' if good else None, "attempts": att})
+        else:
+            try:
+                ids = [m.id for m in _openai_client(timeout=12, retries=0).models.list().data]
+                ok = cfg["id"] in ids
+                note = "ok" if ok else f"ID tidak ada di /v1/models. Tersedia sebagian: {', '.join(ids[:8])}"
+            except Exception as e:
+                ok, note = False, f"{type(e).__name__}: {_short(e)}"
+            report.append({"model": key, "label": cfg["label"], "ok": ok,
+                           "using": f'{_base_url()} | {cfg["id"]}' if ok else None,
+                           "attempts": [{"base": _base_url(), "id": cfg["id"], "result": note}]})
+    return report

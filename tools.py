@@ -39,19 +39,24 @@ def tool(name, description, properties=None, required=(), dangerous=False):
     return deco
 
 
-def tool_specs(allow_actions: bool = False) -> list[dict]:
-    """Daftar tool (tanpa fungsi) yang boleh dilihat model."""
+def tool_specs(allow_actions: bool = False, enabled=None) -> list[dict]:
+    """Daftar tool (tanpa fungsi) yang boleh dilihat model.
+
+    enabled: None = semua tool; atau kumpulan nama tool yang dinyalakan pengguna.
+    """
     return [
         {k: v for k, v in t.items() if k != "fn"}
         for t in _REGISTRY.values()
-        if allow_actions or not t["dangerous"]
+        if (allow_actions or not t["dangerous"]) and (enabled is None or t["name"] in enabled)
     ]
 
 
-def execute_tool(name: str, args: dict, allow_actions: bool = False) -> str:
+def execute_tool(name: str, args: dict, allow_actions: bool = False, enabled=None) -> str:
     t = _REGISTRY.get(name)
     if not t:
         return json.dumps({"error": f"Tool '{name}' tidak ada."})
+    if enabled is not None and name not in enabled:
+        return json.dumps({"error": f"Tool '{name}' dinonaktifkan di pengaturan."})
     if t["dangerous"] and not allow_actions:
         return json.dumps({"error": "Aksi ini dinonaktifkan oleh pengguna."})
     try:
