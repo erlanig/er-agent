@@ -12,10 +12,10 @@ from dotenv import load_dotenv
 
 load_dotenv()  # baca .env saat lokal; di Vercel dipakai Environment Variables
 
-from flask import Flask, Response, jsonify, render_template, request, stream_with_context  # noqa: E402
+from flask import Flask, Response, abort, jsonify, render_template, request, send_from_directory, stream_with_context  # noqa: E402
 
 from providers import MODELS, diagnose, run_chat  # noqa: E402
-from tools import tool_specs  # noqa: E402
+from tools import google_status, integrations, tool_specs  # noqa: E402
 
 app = Flask(__name__)
 
@@ -135,6 +135,25 @@ def index():
     return render_template("index.html")
 
 
+def _asset(name: str):
+    """Sajikan icon dari static/ atau root proyek (publik, tanpa auth agar tampil di halaman login)."""
+    for folder in (os.path.join(app.root_path, "static"), app.root_path):
+        if os.path.isfile(os.path.join(folder, name)):
+            return send_from_directory(folder, name, max_age=86400)
+    abort(404)
+
+
+@app.get("/bird.png")
+def bird_png():
+    return _asset("bird.png")
+
+
+@app.get("/bird.ico")
+@app.get("/favicon.ico")
+def bird_ico():
+    return _asset("bird.ico")
+
+
 @app.get("/api/health")
 def health():
     return jsonify(ok=True)
@@ -145,10 +164,23 @@ def config():
     return jsonify(
         models=[{"key": k, "label": v["label"], "provider": v["provider"]} for k, v in MODELS.items()],
         tools=[
-            {"name": t["name"], "description": t["description"], "dangerous": t["dangerous"]}
+            {"name": t["name"], "description": t["description"], "dangerous": t["dangerous"],
+             "group": t["group"], "available": t["available"]}
             for t in tool_specs(allow_actions=True)
         ],
+        integrations=integrations(),
     )
+
+
+@app.get("/api/google/status")
+def google_status_route():
+    state = _auth_state()
+    if state != "ok":
+        return _auth_error(state)
+    try:
+        return jsonify(google_status())
+    except Exception as e:
+        return jsonify(error=f"{type(e).__name__}: {e}"), 500
 
 
 @app.get("/api/session")

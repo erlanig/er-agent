@@ -4,6 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>ER Agent — Intelligent Workspace</title>
+<link rel="icon" type="image/x-icon" href="/bird.ico">
+<link rel="icon" type="image/png" href="/bird.png">
+<link rel="apple-touch-icon" href="/bird.png">
 <script>try{var t=JSON.parse(localStorage.getItem('bc.settings')||'{}').theme;if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -48,7 +51,8 @@
   }
 }
 *{box-sizing:border-box}
-html,body{height:100%;margin:0}
+html,body{height:100%;margin:0;overflow:hidden;overscroll-behavior:none}
+@supports (height:100dvh){html,body{height:100dvh}}
 body{font-family:var(--sans);background:var(--bg);color:var(--ink);font-size:15px;line-height:1.65;
   padding-top:env(safe-area-inset-top,0);padding-bottom:env(safe-area-inset-bottom,0);-webkit-font-smoothing:antialiased}
 button,select,textarea,input{font:inherit;color:inherit}
@@ -59,8 +63,8 @@ svg{display:block;flex:none}
 .ico-btn:hover{background:var(--hover);color:var(--ink)}
 
 /* Layout & Collapsible Sidebar */
-.app{display:grid;grid-template-columns:288px 1fr;height:100%;transition:grid-template-columns .28s cubic-bezier(.4,0,.2,1)}
-.app.collapsed{grid-template-columns:0px 1fr}
+.app{display:grid;grid-template-columns:288px minmax(0,1fr);grid-template-rows:minmax(0,1fr);height:100%;overflow:hidden;transition:grid-template-columns .28s cubic-bezier(.4,0,.2,1)}
+.app.collapsed{grid-template-columns:0px minmax(0,1fr)}
 .side{background:var(--side);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;width:288px;overflow:hidden;transition:transform .28s cubic-bezier(.4,0,.2,1),opacity .2s}
 .app.collapsed .side{transform:translateX(-100%);opacity:0;pointer-events:none;border-right:0}
 
@@ -100,16 +104,16 @@ svg{display:block;flex:none}
 .side-foot .grow:hover{background:var(--hover);color:var(--ink)}
 
 /* Main Workspace */
-.main{display:flex;flex-direction:column;min-width:0;min-height:0;position:relative}
-.top{display:flex;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid transparent}
+.main{display:flex;flex-direction:column;min-width:0;min-height:0;position:relative;overflow:hidden}
+.top{flex:none;display:flex;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid transparent}
 .model{border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:7px 12px;font-weight:600;font-size:14px;max-width:55vw;box-shadow:0 1px 2px rgba(0,0,0,.03)}
 .badge{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:99px;background:var(--accent-soft);color:var(--accent);font-size:12.5px;font-weight:600;max-width:40vw;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .spacer{flex:1}
-.scroll{flex:1;overflow:auto}
+.scroll{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain}
 .col{max-width:800px;margin:0 auto;padding:8px 20px 32px}
 
 /* Empty State Clean */
-.empty{max-width:580px;margin:14vh auto 0;padding:0 20px;text-align:center;animation:fadeIn .35s ease}
+.empty{max-width:580px;margin:min(14vh,120px) auto 0;padding:0 20px;text-align:center;animation:fadeIn .35s ease}
 .empty h1{font-size:28px;font-weight:800;letter-spacing:-.025em;margin:0 0 8px}
 .empty p{color:var(--muted);margin:0 0 22px;font-size:15px}
 .caps{display:flex;flex-wrap:wrap;justify-content:center;gap:10px}
@@ -124,7 +128,7 @@ svg{display:block;flex:none}
 .msg.user .body{background:linear-gradient(135deg,var(--accent),var(--accent-2));color:#fff;padding:11px 16px;border-radius:20px 20px 4px 20px;white-space:pre-wrap;word-break:break-word;box-shadow:0 4px 12px rgba(79,70,229,.2)}
 
 .msg.bot{justify-content:flex-start;padding-left:0}
-.bot-main{flex:1;min-width:0;max-width:90%}
+.bot-main{flex:1;min-width:0}
 .body{word-break:break-word;overflow-wrap:anywhere}
 .body>:first-child{margin-top:0}.body>:last-child{margin-bottom:0}
 .body p{margin:.65em 0}
@@ -186,7 +190,7 @@ svg{display:block;flex:none}
 .acts-row button:hover{background:var(--hover);color:var(--ink)}
 
 /* Composer & File Attachments & Dynamic Suggestions */
-.composer{padding:6px 16px 16px}
+.composer{flex:none;padding:6px 16px 16px}
 .comp-wrap{max-width:800px;margin:0 auto;display:flex;flex-direction:column;gap:8px}
 
 .dyn-prompts{display:flex;gap:7px;overflow-x:auto;padding:2px 2px;scrollbar-width:none}
@@ -267,7 +271,7 @@ svg{display:block;flex:none}
 .backdrop{display:none}
 
 @media (max-width:820px){
-  .app,.app.collapsed{grid-template-columns:1fr}
+  .app,.app.collapsed{grid-template-columns:minmax(0,1fr)}
   .side,.app.collapsed .side{position:fixed;inset:0 auto 0 0;width:300px;max-width:86vw;transform:translateX(-100%);opacity:1;pointer-events:auto;transition:transform .22s;z-index:20;
     padding-top:env(safe-area-inset-top,0);border-right:1px solid var(--line)}
   .side.open,.app.collapsed .side.open{transform:none}
@@ -275,6 +279,9 @@ svg{display:block;flex:none}
   .item .acts{display:flex}
   .item .cnt{display:none}
 }
+.logo{width:26px;height:26px;object-fit:contain;flex:none;border-radius:8px}
+.logo-big{width:64px;height:64px;object-fit:contain;display:block;margin:0 auto 16px}
+.bot-avatar{width:30px;height:30px;flex:none;margin-top:2px;border-radius:50%;border:1px solid var(--line);background:#fff;padding:4px;object-fit:contain}
 </style>
 </head>
 <body>
@@ -282,6 +289,7 @@ svg{display:block;flex:none}
   <aside class="side" id="side">
     <div class="brand">
       <div class="brand-left">
+        <img class="logo" src="/bird.png" alt="">
         <span class="brand-text">ER Agent</span>
       </div>
       <button class="ico-btn" id="collapseSideBtn" title="Sembunyikan sidebar (Ctrl+B)" aria-label="Sembunyikan sidebar"></button>
@@ -587,6 +595,12 @@ function updateDynamicPrompts(){
     } else if(/(api|docker|airflow|dbt|pipeline|deploy|ci\/cd|github)/.test(val)){
       prompts.push('Buatkan arsitektur & konfigurasi best-practice siap produksi');
       prompts.push('Cek status workflow CI/CD atau tulis pipeline otomatisasinya');
+    } else if(/(jadwal|kalender|meeting|rapat|agenda|event)/.test(val)){
+      prompts.push('Cek jadwal kalender saya 7 hari ke depan & cari slot kosong');
+      prompts.push('Buatkan event baru di kalender saya (tanyakan detail yang kurang)');
+    } else if(/(email|gmail|surel|inbox|balas)/.test(val)){
+      prompts.push('Ringkas email belum dibaca di inbox saya');
+      prompts.push('Siapkan draft balasan email (jangan kirim dulu)');
     } else if(/(hitung|rumus|persen|ppn|bunga|simulasi|saham|valuasi)/.test(val)){
       prompts.push('Hitung langkah demi langkah menggunakan tool kalkulator & tampilkan tabelnya');
     } else if(val.length > 4){
@@ -754,7 +768,9 @@ function renderSidebar(){
 function renderEmpty(){
   const w = el('div', 'empty');
   const c = active(), p = c && project(c.projectId);
+  const logo = el('img', 'logo-big'); logo.src = '/bird.png'; logo.alt = '';
   w.append(
+    logo,
     el('h1', '', p ? p.name : 'ER Agent Siap Membantu'),
     el('p', '', p ? 'Instruksi khusus proyek aktif pada ruang obrolan ini.' : 'Ketik pertanyaan di bawah atau lampirkan dokumen, dataset, kode, maupun gambar untuk dianalisis secara mendalam.')
   );
@@ -762,6 +778,7 @@ function renderEmpty(){
   const items = [
     'Analisis Dokumen & Kode',
     'Kalkulasi & Data Insight',
+    'Kalender, Email & Drive',
     'Eksekusi Tool & Otomatisasi'
   ];
   for(const label of items){
@@ -816,7 +833,8 @@ function renderMsg(m, opts = {}){
     if(opts.last){ const rg = el('button'); rg.type = 'button'; rg.append(ico('refresh', 14), document.createTextNode('Ulangi')); rg.onclick = regenerate; a.append(rg); }
     main.append(a);
   }
-  row.append(main); return row;
+  const av = el('img', 'bot-avatar'); av.src = '/bird.png'; av.alt = '';
+  row.append(av, main); return row;
 }
 
 function renderMessages(){
@@ -972,11 +990,31 @@ function settingsBody(){
   b.append(seg, el('h3', '', 'Tools'));
   b.append(switchRow('Izinkan aksi eksternal (CI/CD & mutasi)', 'Mis. menjalankan workflow GitHub Actions. Bila mati, tool bertanda Aksi tidak ditawarkan ke model.',
     state.settings.allowActions, v => { state.settings.allowActions = v; save(); }, {tag: 'hati-hati'}));
-  for(const t of state.config.tools){
-    b.append(switchRow(t.name, t.description, !state.settings.disabledTools.includes(t.name), v => {
-      const s = new Set(state.settings.disabledTools); v ? s.delete(t.name) : s.add(t.name); state.settings.disabledTools = [...s]; save();
-    }, {mono: true, tag: t.dangerous ? 'Aksi' : null}));
+  const groups = {};
+  for(const t of state.config.tools){ (groups[t.group || 'Umum'] = groups[t.group || 'Umum'] || []).push(t); }
+  for(const [g, list] of Object.entries(groups)){
+    b.append(el('h3', '', g + (list.every(t => t.available === false) ? ' (belum terhubung)' : '')));
+    for(const t of list){
+      b.append(switchRow(t.name, t.description, !state.settings.disabledTools.includes(t.name), v => {
+        const s = new Set(state.settings.disabledTools); v ? s.delete(t.name) : s.add(t.name); state.settings.disabledTools = [...s]; save();
+      }, {mono: true, tag: t.dangerous ? 'Aksi' : (t.available === false ? 'belum aktif' : null)}));
+    }
   }
+  b.append(el('h3', '', 'Koneksi Google'));
+  const gOut = el('div', 'diag'); gOut.style.display = 'none';
+  const gBtn = el('button', 'btn', 'Tes koneksi Google'); gBtn.type = 'button';
+  gBtn.onclick = async () => {
+    gBtn.disabled = true; gBtn.textContent = 'Menguji…'; gOut.style.display = 'block'; gOut.textContent = 'Menghubungi Google…';
+    try{
+      const res = await fetch('/api/google/status'); const j = await res.json();
+      if(!res.ok) throw new Error(j.error || res.status);
+      gOut.textContent = j.configured
+        ? (j.ok ? 'OK. Akses yang diberikan: ' + (j.scopes.join(', ') || '-') : 'Token tidak valid.')
+        : 'Belum dikonfigurasi. Variabel yang belum ada: ' + j.missing.join(', ');
+    }catch(e){ gOut.textContent = 'Gagal: ' + e.message; }
+    gBtn.disabled = false; gBtn.textContent = 'Tes koneksi Google';
+  };
+  b.append(gBtn, gOut);
   b.append(el('h3', '', 'Instruksi kustom (berlaku di semua obrolan)'));
   const ta = el('textarea'); ta.rows = 4; ta.value = state.settings.instructions; ta.placeholder = 'mis. Jawab dalam Bahasa Indonesia secara terstruktur, sertakan contoh kode yang bersih.';
   ta.oninput = () => { state.settings.instructions = ta.value; save(); }; b.append(ta);
