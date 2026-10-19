@@ -1,8 +1,12 @@
+import csv
 import hashlib
 import hmac
+import io
 import json
 import os
 import time
+import zipfile
+import xml.etree.ElementTree as ET
 
 from dotenv import load_dotenv
 
@@ -16,7 +20,7 @@ from tools import tool_specs  # noqa: E402
 app = Flask(__name__)
 
 MAX_MESSAGES = 40
-MAX_CHARS = 40_000
+MAX_CHARS = 80_000
 MAX_INSTRUCTIONS = 6_000
 SESSION_COOKIE = "bc_session"
 SESSION_DAYS = 30
@@ -74,6 +78,56 @@ def _is_https() -> bool:
 
 
 # --------------------------------------------------------------------------
+# Ekstraktor Dokumen (PDF, DOCX, XLSX, CSV, Teks)
+# --------------------------------------------------------------------------
+def _extract_docx(raw: bytes) -> str:
+    with zipfile.ZipFile(io.BytesIO(raw)) as z:
+        xml_content = z.read("word/document.xml")
+    tree = ET.fromstring(xml_content)
+    paragraphs = []
+    for p in tree.iter("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p"):
+        texts = [t.text for t in p.iter("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t") if t.text]
+        if texts:
+            paragraphs.append("".join(texts))
+    return "\n".join(paragraphs)
+
+
+def _extract_pdf(raw: bytes) -> str:
+    try:
+        import pypdf
+        reader = pypdf.PdfReader(io.BytesIO(raw))
+        return "\n\n".join(page.extract_text() or "" for page in reader.pages[:50])
+    except ImportError:
+        try:
+            import PyPDF2
+            reader = PyPDF2.PdfReader(io.BytesIO(raw))
+            return "\n\n".join(page.extract_text() or "" for page in reader.pages[:50])
+        except ImportError:
+            raise RuntimeError("Library 'pypdf' belum terinstal di server (jalankan: pip install pypdf).")
+
+
+def _extract_xlsx(raw: bytes) -> str:
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(io.BytesIO(raw), data_only=True, read_only=True)
+        out = []
+        for sheet in wb.sheetnames[:10]:
+            ws = wb[sheet]
+            rows = []
+            for idx, row in enumerate(ws.iter_rows(values_only=True)):
+                if idx > 300:
+                    rows.append("... (baris berikutnya dipotong)")
+                    break
+                if any(cell is not None for cell in row):
+                    rows.append("\t".join("" if c is None else str(c) for c in row))
+            if rows:
+                out.append(f"### Sheet: {sheet}\n" + "\n".join(rows))
+        return "\n\n".join(out)
+    except ImportError:
+        raise RuntimeError("Library 'openpyxl' belum terinstal di server (jalankan: pip install openpyxl).")
+
+
+# --------------------------------------------------------------------------
 # Route
 # --------------------------------------------------------------------------
 @app.get("/")
@@ -110,7 +164,7 @@ def login():
     body = request.get_json(silent=True) or {}
     pw = body.get("password") or request.headers.get("X-App-Password", "")
     if not _password_ok(pw):
-        time.sleep(0.4)  # perlambat tebak-tebakan password
+        time.sleep(0.4)
         return jsonify(error="Password salah."), 401
     resp = jsonify(ok=True)
     resp.set_cookie(
@@ -125,6 +179,36 @@ def logout():
     resp = jsonify(ok=True)
     resp.delete_cookie(SESSION_COOKIE, path="/")
     return resp
+
+
+@app.post("/api/extract")
+def extract_file():
+    state = _auth_state()
+    if state != "ok":
+        return _auth_error(state)
+    f = request.files.get("file")
+    if not f:
+        return jsonify(error="Tidak ada file yang dikirim."), 400
+
+    filename = (f.filename or "").lower()
+    raw = f.read(15 * 1024 * 1024)
+    try:
+        if filename.endswith(".docx"):
+            text = _extract_docx(raw)
+        elif filename.endswith(".pdf"):
+            text = _extract_pdf(raw)
+        elif filename.endswith(".xlsx"):
+            text = _extract_xlsx(raw)
+        elif filename.endswith(".csv"):
+            decoded = raw.decode("utf-8", errors="replace")
+            reader = csv.reader(io.StringIO(decoded))
+            lines = ["\t".join(r) for _, r in zip(range(500), reader)]
+            text = "\n".join(lines)
+        else:
+            text = raw.decode("utf-8", errors="replace")
+        return jsonify(ok=True, text=text[:MAX_CHARS])
+    except Exception as e:
+        return jsonify(error=str(e)), 422
 
 
 @app.post("/api/diagnose")
@@ -152,8 +236,17 @@ def chat():
     history = []
     for m in (body.get("messages") or [])[-MAX_MESSAGES:]:
         role, content = m.get("role"), m.get("content")
-        if role in ("user", "assistant") and isinstance(content, str) and content.strip():
-            history.append({"role": role, "content": content[:MAX_CHARS]})
+        images = m.get("images") or []
+        if role in ("user", "assistant") and isinstance(content, str) and (content.strip() or images):
+            clean_imgs = []
+            for img in images[:4]:
+                if isinstance(img, dict) and str(img.get("data_url", "")).startswith("data:image/"):
+                    clean_imgs.append({
+                        "media_type": str(img.get("media_type") or "image/png"),
+                        "data_url": str(img["data_url"]),
+                    })
+            history.append({"role": role, "content": content[:MAX_CHARS], "images": clean_imgs})
+
     while history and history[0]["role"] != "user":
         history.pop(0)
     if not history or history[-1]["role"] != "user":
@@ -168,7 +261,7 @@ def chat():
         try:
             for event in run_chat(model_key, history, allow_actions, enabled, extra):
                 yield json.dumps(event, ensure_ascii=False) + "\n"
-        except Exception as e:  # tampilkan ke UI alih-alih memutus koneksi tanpa pesan
+        except Exception as e:
             yield json.dumps({"type": "error", "message": f"{type(e).__name__}: {e}"}, ensure_ascii=False) + "\n"
         yield json.dumps({"type": "done"}) + "\n"
 

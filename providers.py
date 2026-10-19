@@ -1,15 +1,4 @@
-"""Lapisan model: GPT-OSS via Chat Completions (Mantle), Claude via Anthropic Messages.
-
-Claude: karena ID model dan endpoint yang tersedia berbeda-beda per region/akun,
-kode ini mencoba beberapa kombinasi (bedrock-runtime / bedrock-mantle x ID dengan
-prefix global./jp./au./us./polos) dan mengingat kombinasi yang berhasil.
-Hasil percobaan bisa dilihat lewat Pengaturan -> Tes koneksi model.
-
-Event yang dihasilkan untuk UI:
-  {"type": "text", "delta": "..."}
-  {"type": "tool_call", "id", "name", "args"}
-  {"type": "tool_result", "id", "name", "result"}
-"""
+"""Lapisan model ER Agent: GPT-OSS via Chat Completions (Mantle), Claude via Anthropic Messages."""
 import json
 import os
 import re
@@ -66,16 +55,17 @@ MODELS = {
     },
 }
 
-_RESOLVED: dict[str, tuple[str, str]] = {}  # model_key -> (base_url, model_id) yang terbukti jalan
+_RESOLVED: dict[str, tuple[str, str]] = {}
 _RETRYABLE = (anthropic.NotFoundError, anthropic.BadRequestError, anthropic.PermissionDeniedError)
 
 
 def system_prompt(extra: str = "") -> str:
     now = datetime.now(ZoneInfo("Asia/Jakarta")).strftime("%A, %d %B %Y %H:%M WIB")
     base = (
-        "Kamu adalah asisten AI yang ringkas, jujur, dan membantu. "
-        "Balas dalam bahasa yang dipakai pengguna. Gunakan Markdown: tabel bila membandingkan data, "
+        "Kamu adalah ER Agent, asisten AI engineering & analitik tingkat lanjut yang tajam, jujur, dan terstruktur. "
+        "Balas dalam bahasa yang dipakai pengguna. Gunakan Markdown: tabel saat membandingkan metrik/data, "
         "blok kode dengan nama bahasa, dan LaTeX untuk rumus ($...$ inline, $$...$$ blok). "
+        "Jika pengguna melampirkan file atau dokumen, analisis isinya secara teliti dan mendalam. "
         "Pakai tool bila membantu dan jangan mengarang hasil tool. "
         "Untuk aksi yang mengubah sesuatu (mis. menjalankan workflow CI/CD), "
         "jelaskan dulu apa yang akan dilakukan, lalu laporkan hasilnya. "
@@ -86,9 +76,6 @@ def system_prompt(extra: str = "") -> str:
     return base
 
 
-# --------------------------------------------------------------------------
-# Klien & endpoint
-# --------------------------------------------------------------------------
 def _base_url() -> str:
     return os.environ["BEDROCK_BASE_URL"].rstrip("/")
 
@@ -123,13 +110,12 @@ def claude_candidates(key: str) -> list[tuple[str, str]]:
     for base in _anthropic_bases():
         for mid in ids:
             if "bedrock-mantle" in base and not mid.startswith("anthropic."):
-                continue  # Mantle memakai ID polos, bukan inference profile
+                continue
             out.append((base, mid))
     return out
 
 
 def _anthropic_client(base: str, timeout: float = 55, retries: int = 1) -> Anthropic:
-    # Bedrock API key dikirim sebagai x-api-key; SDK menambahkan /v1/messages.
     return Anthropic(api_key=os.environ["BEDROCK_API_KEY"], base_url=base, timeout=timeout, max_retries=retries)
 
 
@@ -148,6 +134,45 @@ def _run_tool(call_id, name, args, allow_actions, enabled):
     return result
 
 
+def _format_openai_messages(history: list[dict], extra: str) -> list[dict]:
+    msgs = [{"role": "system", "content": system_prompt(extra)}]
+    for m in history:
+        imgs = m.get("images") or []
+        if m["role"] == "user" and imgs:
+            parts = []
+            for img in imgs:
+                parts.append({"type": "image_url", "image_url": {"url": img["data_url"]}})
+            if m.get("content"):
+                parts.append({"type": "text", "text": m["content"]})
+            msgs.append({"role": "user", "content": parts})
+        else:
+            msgs.append({"role": m["role"], "content": m["content"]})
+    return msgs
+
+
+def _format_anthropic_messages(history: list[dict]) -> list[dict]:
+    msgs = []
+    for m in history:
+        imgs = m.get("images") or []
+        if m["role"] == "user" and imgs:
+            blocks = []
+            for img in imgs:
+                header, _, b64 = img["data_url"].partition(",")
+                media_type = img.get("media_type") or "image/png"
+                if ";base64" in header and header.startswith("data:"):
+                    media_type = header[5:].split(";")[0]
+                blocks.append({
+                    "type": "image",
+                    "source": {"type": "base64", "media_type": media_type, "data": b64},
+                })
+            if m.get("content"):
+                blocks.append({"type": "text", "text": m["content"]})
+            msgs.append({"role": "user", "content": blocks})
+        else:
+            msgs.append({"role": m["role"], "content": m["content"]})
+    return msgs
+
+
 # --------------------------------------------------------------------------
 # GPT-OSS (OpenAI-compatible)
 # --------------------------------------------------------------------------
@@ -157,7 +182,7 @@ def run_openai(model_id, history, allow_actions, enabled, extra):
         {"type": "function", "function": {"name": t["name"], "description": t["description"], "parameters": t["schema"]}}
         for t in tool_specs(allow_actions, enabled)
     ]
-    msgs = [{"role": "system", "content": system_prompt(extra)}] + history
+    msgs = _format_openai_messages(history, extra)
 
     for _ in range(MAX_STEPS):
         kwargs = {"model": model_id, "messages": msgs, "stream": True}
@@ -212,7 +237,7 @@ def run_anthropic(base, model_id, history, allow_actions, enabled, extra):
         {"name": t["name"], "description": t["description"], "input_schema": t["schema"]}
         for t in tool_specs(allow_actions, enabled)
     ]
-    msgs = list(history)
+    msgs = _format_anthropic_messages(history)
 
     for _ in range(MAX_STEPS):
         kwargs = {"model": model_id, "max_tokens": MAX_TOKENS, "system": system_prompt(extra), "messages": msgs}
@@ -279,9 +304,6 @@ def run_chat(model_key, history, allow_actions=False, enabled=None, extra=""):
     )
 
 
-# --------------------------------------------------------------------------
-# Diagnosa koneksi
-# --------------------------------------------------------------------------
 def _short(e: Exception) -> str:
     msg = getattr(e, "message", None) or str(e)
     return re.sub(r"\s+", " ", msg)[:140]
