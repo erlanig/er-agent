@@ -1,0 +1,15 @@
+name: Demo (dipicu dari chatbot)
+
+on:
+  workflow_dispatch:
+    inputs:
+      pesan:
+        description: "Pesan contoh"
+        required: false
+        default: "halo dari chatbot"
+
+jobs:
+  hello:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Pesan: ${{ github.event.inputs.pesan }}"
