@@ -14,6 +14,7 @@ load_dotenv()  # baca .env saat lokal; di Vercel dipakai Environment Variables
 
 from flask import Flask, Response, abort, jsonify, render_template, request, send_from_directory, stream_with_context  # noqa: E402
 
+import approvals  # noqa: E402
 from providers import MODELS, diagnose, run_chat  # noqa: E402
 from tools import google_status, integrations, tool_specs  # noqa: E402
 
@@ -169,6 +170,7 @@ def config():
             for t in tool_specs(allow_actions=True)
         ],
         integrations=integrations(),
+        features={"approval": True},  # UI baru memakai ini untuk mengaktifkan kartu persetujuan
     )
 
 
@@ -254,6 +256,25 @@ def diagnose_route():
         return jsonify(error=f"{type(e).__name__}: {e}"), 500
 
 
+@app.post("/api/action")
+def action_route():
+    """Jalankan aksi yang sudah disetujui pengguna lewat kartu persetujuan."""
+    state = _auth_state()
+    if state != "ok":
+        return _auth_error(state)
+    body = request.get_json(silent=True) or {}
+    try:
+        out = approvals.run_approved(
+            str(body.get("name") or ""), body.get("args") or {},
+            int(body.get("exp") or 0), str(body.get("token") or ""),
+        )
+    except PermissionError as e:
+        return jsonify(error=str(e)), 403
+    except Exception as e:
+        return jsonify(error=f"{type(e).__name__}: {e}"), 500
+    return jsonify(out)
+
+
 @app.post("/api/chat")
 def chat():
     state = _auth_state()
@@ -285,13 +306,14 @@ def chat():
         return jsonify(error="Pesan terakhir harus dari pengguna."), 400
 
     allow_actions = bool(body.get("allow_actions"))
+    approval = bool(body.get("approval_mode"))  # UI baru mengirim true -> aksi menunggu tombol Setujui
     enabled = body.get("enabled_tools")
     enabled = {str(x) for x in enabled} if isinstance(enabled, list) else None
     extra = str(body.get("instructions") or "")[:MAX_INSTRUCTIONS]
 
     def generate():
         try:
-            for event in run_chat(model_key, history, allow_actions, enabled, extra):
+            for event in run_chat(model_key, history, allow_actions, enabled, extra, approval):
                 yield json.dumps(event, ensure_ascii=False) + "\n"
         except Exception as e:
             yield json.dumps({"type": "error", "message": f"{type(e).__name__}: {e}"}, ensure_ascii=False) + "\n"
