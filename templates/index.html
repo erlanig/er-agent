@@ -18,6 +18,7 @@
 <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.10.0/highlight.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
 <style>
 :root{
   --bg:#f8fafc; --side:#f1f5f9; --surface:#ffffff; --hover:#e2e8f0; --ink:#0f172a; --muted:#64748b;
@@ -121,7 +122,7 @@ svg{display:block;flex:none}
 
 @keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 
-/* Messages (Tanpa Avatar AI) */
+/* Messages */
 .msg{margin:22px 0;display:flex;gap:14px}
 .msg.user{justify-content:flex-end}
 .msg.user .user-wrap{max-width:85%;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
@@ -180,6 +181,7 @@ svg{display:block;flex:none}
 .tool.running .dot{background:var(--accent);animation:pulse 1s infinite}
 .tool.done .dot{background:var(--ok)}
 .tool.fail .dot{background:var(--err)}
+.tool.wait .dot{background:var(--warn)}
 .tool .name{font-family:var(--mono);font-weight:500;color:var(--ink)}
 .tool pre{margin:0;padding:10px 12px;border-top:1px solid var(--line);font-family:var(--mono);font-size:12px;
   white-space:pre-wrap;word-break:break-all;max-height:220px;overflow:auto;color:var(--muted)}
@@ -188,6 +190,23 @@ svg{display:block;flex:none}
 .msg:hover .acts-row,.acts-row:focus-within{opacity:1}
 .acts-row button{display:flex;align-items:center;gap:6px;border:0;background:none;color:var(--muted);padding:4px 8px;border-radius:8px;font-size:12.5px}
 .acts-row button:hover{background:var(--hover);color:var(--ink)}
+
+/* Approval cards */
+.appr{border:1px solid var(--warn);background:var(--surface);border-radius:14px;margin:10px 0;overflow:hidden;font-size:13.5px}
+.appr.done{border-color:var(--ok)}.appr.fail,.appr.rejected,.appr.expired{border-color:var(--err)}
+.appr-h{display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--warn-soft)}
+.appr-h b{font-family:var(--mono);font-weight:600}
+.appr-kv{display:grid;grid-template-columns:110px 1fr;gap:4px 10px;padding:8px 12px;border-top:1px solid var(--line)}
+.appr-kv span:nth-child(odd){color:var(--muted)}
+.appr-kv span:nth-child(even){white-space:pre-wrap;word-break:break-word}
+.appr-b{display:flex;gap:8px;justify-content:flex-end;padding:8px 12px;border-top:1px solid var(--line)}
+.appr-s{padding:8px 12px;border-top:1px solid var(--line);color:var(--muted);word-break:break-word}
+.btn:disabled{opacity:.5;cursor:default}
+
+/* Mermaid & truncation notice */
+.mermaid-box{margin:.9em 0;border:1px solid var(--line);border-radius:13px;overflow:hidden;background:var(--code)}
+.mm-view{padding:14px;overflow:auto;text-align:center}.mm-view svg{max-width:100%;height:auto;display:inline-block}
+.cut{display:flex;align-items:center;gap:10px;margin-top:8px;padding:8px 12px;border:1px dashed var(--warn);border-radius:12px;font-size:13px;color:var(--muted)}
 
 /* Composer & File Attachments & Dynamic Suggestions */
 .composer{flex:none;padding:6px 16px 16px}
@@ -401,6 +420,7 @@ function formatBytes(b){
   if(b < 1048576) return (b / 1024).toFixed(1) + ' KB';
   return (b / 1048576).toFixed(1) + ' MB';
 }
+const fmtMs = ms => ms < 1000 ? Math.round(ms) + ' ms' : (ms / 1000).toFixed(1) + ' dtk';
 
 /* ------------------------------ state ------------------------------ */
 const DEFAULTS = {theme: 'auto', allowActions: false, disabledTools: [], instructions: '', sidebarCollapsed: false};
@@ -438,12 +458,17 @@ const closeSide = () => { $('#side').classList.remove('open'); $('#backdrop').cl
 /* ------------------------------ theme ------------------------------ */
 const mq = matchMedia('(prefers-color-scheme: dark)');
 const isDark = () => state.settings.theme === 'auto' ? mq.matches : state.settings.theme === 'dark';
+function initMermaid(){
+  if(window.mermaid) mermaid.initialize({startOnLoad: false, securityLevel: 'strict', theme: isDark() ? 'dark' : 'default'});
+}
 function applyTheme(){
   const t = state.settings.theme, root = document.documentElement;
   if(t === 'auto') root.removeAttribute('data-theme'); else root.setAttribute('data-theme', t);
   const dark = isDark();
   $('#hl-light').disabled = dark; $('#hl-dark').disabled = !dark;
   const b = $('#themeBtn'); b.replaceChildren(ico(dark ? 'sun' : 'moon', 18)); b.title = dark ? 'Mode terang' : 'Mode gelap';
+  initMermaid();
+  if(window.__ready && !busy) renderMessages(); // render ulang agar diagram mengikuti tema
 }
 mq.addEventListener('change', applyTheme);
 
@@ -468,10 +493,25 @@ function renderMarkdown(src){
   html = html.replace(/<table>/g, '<div class="tbl"><table>').replace(/<\/table>/g, '</table></div>');
   return html.replace(/%%MATH(\d+)%%/g, (_, i) => bag[+i] ?? '');
 }
-function enhance(root){
+let mmSeq = 0;
+function renderMermaid(pre, src){
+  const box = el('div', 'mermaid-box'), head = el('div', 'code-h'), view = el('div', 'mm-view');
+  const b = el('button'); b.type = 'button'; b.append(ico('copy', 13), document.createTextNode('Salin'));
+  b.onclick = () => copyText(src, b);
+  head.append(el('span', '', 'mermaid'), b); box.append(head, view); pre.replaceWith(box);
+  mermaid.render('mm' + (++mmSeq) + uid(), src)
+    .then(r => { view.innerHTML = r.svg; })
+    .catch(e => {
+      document.querySelectorAll('[id^="dmm"]').forEach(x => x.remove()); // sisa elemen error Mermaid
+      view.replaceChildren(el('div', 'err', 'Diagram tidak valid: ' + (e.message || e)), pre);
+    });
+}
+function enhance(root, live){
   root.querySelectorAll('pre').forEach(pre => {
     const code = pre.querySelector('code'); if(!code) return;
     const lang = (code.className.match(/language-([\w+-]+)/) || [])[1] || 'teks';
+    // Saat streaming, sintaks mermaid masih setengah jadi: tampilkan sebagai kode, render setelah selesai
+    if(lang === 'mermaid' && !live && window.mermaid){ renderMermaid(pre, code.textContent); return; }
     if(window.hljs){ try{ hljs.highlightElement(code); }catch{} }
     const box = el('div', 'code'), head = el('div', 'code-h'); head.append(el('span', '', lang));
     const b = el('button'); b.type = 'button'; b.append(ico('copy', 13), document.createTextNode('Salin'));
@@ -764,7 +804,42 @@ function renderSidebar(){
   recent.forEach(c => box.append(chatRow(c)));
 }
 
-/* ------------------------------ render: messages (Clean ChatGPT Style) ------------------------------ */
+/* ------------------------------ approval cards ------------------------------ */
+const STATUS_TXT = {pending: 'Menunggu persetujuan', running: 'Menjalankan…', done: 'Disetujui & berhasil', fail: 'Gagal', rejected: 'Ditolak', expired: 'Kedaluwarsa'};
+function approvalCard(a, live){
+  if(a.status === 'pending' && a.exp * 1000 < Date.now()) a.status = 'expired';
+  const box = el('div', 'appr ' + a.status), h = el('div', 'appr-h');
+  h.append(el('span', 'tag', a.group || 'Aksi'), el('b', '', a.name), el('span', 'spacer'), el('span', '', STATUS_TXT[a.status] || a.status));
+  box.append(h);
+  const kv = el('div', 'appr-kv');
+  for(const [k, v] of Object.entries(a.args || {})) kv.append(el('span', '', k), el('span', '', typeof v === 'string' ? v : JSON.stringify(v, null, 2)));
+  box.append(kv);
+  if(a.status === 'pending'){
+    const row = el('div', 'appr-b'), no = el('button', 'btn', 'Tolak'), ok = el('button', 'btn primary', 'Setujui');
+    no.type = ok.type = 'button'; no.disabled = ok.disabled = !!(live || busy);
+    no.onclick = () => decide(a, false); ok.onclick = () => decide(a, true);
+    row.append(no, ok); box.append(row);
+  } else if(a.result) box.append(el('div', 'appr-s', a.result));
+  return box;
+}
+async function decide(a, ok){
+  const c = active(); if(!c || a.status !== 'pending' || busy) return;
+  const note = t => c.messages.push({role: 'user', hidden: true, content: '[Sistem] ' + t});
+  if(!ok){ a.status = 'rejected'; a.result = 'Aksi ditolak.'; note(`Pengguna MENOLAK aksi ${a.name}.`); c.updated = Date.now(); save(); renderAll(); return; }
+  a.status = 'running'; renderAll();
+  try{
+    const res = await fetch('/api/action', {method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name: a.name, args: a.args, exp: a.exp, token: a.token})});
+    if(res.status === 401) showGate('Sesi berakhir. Masuk lagi.');
+    const j = await res.json().catch(() => ({}));
+    if(!res.ok) throw new Error(j.error || ('HTTP ' + res.status));
+    a.status = j.ok ? 'done' : 'fail'; a.result = JSON.stringify(j.result).slice(0, 1500);
+  }catch(e){ a.status = 'fail'; a.result = e.message; }
+  note(`Pengguna MENYETUJUI aksi ${a.name}. Hasil: ${a.status === 'done' ? 'berhasil' : 'gagal'} ${a.result}`);
+  c.updated = Date.now(); save(); renderAll();
+}
+
+/* ------------------------------ render: messages ------------------------------ */
 function renderEmpty(){
   const w = el('div', 'empty');
   const c = active(), p = c && project(c.projectId);
@@ -815,18 +890,31 @@ function renderMsg(m, opts = {}){
     row.append(wrap);
     return row;
   }
-  
-  // Bot message without avatar image
+
   const main = el('div', 'bot-main'), body = el('div', 'body' + (opts.live && !m.error ? ' live' : '') + (m.content ? ' has' : ''));
   for(const t of m.tools || []){
     const d = el('details', 'tool ' + t.status); d.open = !!t.open; d.addEventListener('toggle', () => { t.open = d.open; });
-    const s = el('summary'); s.append(el('span', 'dot'), el('span', 'name', t.name), el('span', '', t.status === 'running' ? 'berjalan…' : t.status === 'fail' ? 'gagal' : 'selesai'));
+    const lbl = t.status === 'running' ? 'berjalan… ' + fmtMs(Date.now() - (t.t0 || Date.now()))
+              : t.status === 'fail' ? 'gagal' : t.status === 'wait' ? 'menunggu persetujuan' : 'selesai';
+    const s = el('summary');
+    s.append(el('span', 'dot'), el('span', 'name', t.name),
+             el('span', '', lbl + (t.ms != null && t.status !== 'running' ? ' · ' + fmtMs(t.ms) : '')));
     d.append(s, el('pre', '', 'args: ' + JSON.stringify(t.args) + (t.result ? '\n\nhasil: ' + t.result : ''))); body.append(d);
   }
-  if(m.content){ const c = el('div'); c.innerHTML = renderMarkdown(m.content); enhance(c); body.append(c); }
-  else if(opts.live && !m.error && !(m.tools || []).length){ const d = el('div', 'dots'); d.append(el('i'), el('i'), el('i')); body.append(d); }
+  for(const a of m.approvals || []) body.append(approvalCard(a, !!opts.live));
+  if(m.content){ const c = el('div'); c.innerHTML = renderMarkdown(m.content); enhance(c, !!opts.live); body.append(c); }
+  else if(opts.live && !m.error && !(m.tools || []).length && !(m.approvals || []).length){ const d = el('div', 'dots'); d.append(el('i'), el('i'), el('i')); body.append(d); }
   if(m.error) body.append(el('div', 'err', m.error));
   main.append(body);
+  if(m.cut && !opts.live){
+    const n = el('div', 'cut', 'Jawaban terpotong (koneksi terputus atau batas waktu).');
+    if(opts.last){
+      const b = el('button', 'btn', 'Lanjutkan'); b.type = 'button';
+      b.onclick = () => send('Lanjutkan jawabanmu persis dari bagian yang terpotong, tanpa mengulang.');
+      n.append(b);
+    }
+    main.append(n);
+  }
   if(!opts.live && m.content){
     const a = el('div', 'acts-row'), cp = el('button'); cp.type = 'button'; cp.append(ico('copy', 14), document.createTextNode('Salin'));
     cp.onclick = () => copyText(m.content, cp); a.append(cp);
@@ -839,8 +927,11 @@ function renderMsg(m, opts = {}){
 
 function renderMessages(){
   const box = $('#msgs'); box.replaceChildren(); const c = active();
-  if(!c || !c.messages.length){ box.append(renderEmpty()); return; }
-  c.messages.forEach((m, i) => box.append(renderMsg(m, {last: i === c.messages.length - 1 && !busy})));
+  const vis = c ? c.messages.filter(m => !m.hidden) : [];
+  if(!vis.length){ box.append(renderEmpty()); return; }
+  // "Ulangi"/"Lanjutkan" hanya di pesan terakhir yang sungguh jawaban assistant (bukan sebelum pesan [Sistem])
+  const lastMsg = c.messages[c.messages.length - 1];
+  vis.forEach(m => box.append(renderMsg(m, {last: m === lastMsg && !busy && !(m.approvals || []).length})));
 }
 function renderTop(){
   const c = active(), sel = $('#model'); if(c) sel.value = c.model;
@@ -906,7 +997,7 @@ async function send(overrideText){
     images: images
   });
 
-  if(c.messages.length === 1){
+  if(c.messages.filter(m => !m.hidden).length === 1){
     c.title = (rawText || readyAtts[0]?.name || 'Analisis Baru').slice(0, 44);
   }
   c.updated = Date.now();
@@ -926,7 +1017,7 @@ function regenerate(){
 }
 
 async function runAssistant(c){
-  const bot = {role: 'assistant', content: '', tools: []}; c.messages.push(bot);
+  const bot = {role: 'assistant', content: '', tools: [], approvals: []}; c.messages.push(bot);
   setBusy(true); renderSidebar(); renderMessages(); liveMsg = bot; liveEl = $('#msgs').lastElementChild;
   const sc = $('#scroll'); sc.scrollTop = sc.scrollHeight;
   const history = c.messages.slice(0, -1).filter(m => m.content).map(m => ({
@@ -934,11 +1025,13 @@ async function runAssistant(c){
   }));
   const p = project(c.projectId), instructions = [state.settings.instructions, p?.instructions].filter(Boolean).join('\n\n');
   controller = new AbortController();
+  // Segarkan penghitung durasi tool yang sedang berjalan
+  const tick = setInterval(() => { if(liveMsg && liveMsg.tools.some(t => t.status === 'running')) scheduleRender(); }, 500);
   try{
     const res = await fetch('/api/chat', {
       method: 'POST', signal: controller.signal, headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({model: c.model, messages: history, allow_actions: state.settings.allowActions,
-                            enabled_tools: enabledTools(), instructions})
+                            approval_mode: true, enabled_tools: enabledTools(), instructions})
     });
     if(res.status === 401){ showGate('Sesi berakhir. Masuk lagi.'); throw new Error('Perlu masuk lagi.'); }
     if(!res.ok){ const j = await res.json().catch(() => ({})); throw new Error(j.error || ('HTTP ' + res.status)); }
@@ -953,21 +1046,29 @@ async function runAssistant(c){
       }
       scheduleRender();
     }
+    // Stream berakhir tanpa event 'done' = terputus/timeout di tengah jawaban
+    if(!finished && !bot.error) bot.cut = true;
     try{ await reader.cancel(); }catch{}
   }catch(e){ if(e.name !== 'AbortError') bot.error = e.message; }
   finally{
+    clearInterval(tick);
     cancelAnimationFrame(raf); raf = 0; liveMsg = null; liveEl = null; controller = null;
     for(const t of bot.tools) if(t.status === 'running') t.status = 'fail';
-    if(!bot.content && !bot.tools.length && !bot.error) c.messages.pop();
+    if(!bot.content && !bot.tools.length && !bot.approvals.length && !bot.error) c.messages.pop();
     c.updated = Date.now(); setBusy(false); save(); renderAll();
   }
 }
 function handle(bot, ev){
   if(ev.type === 'text') bot.content += ev.delta;
-  else if(ev.type === 'tool_call') bot.tools.push({id: ev.id, name: ev.name, args: ev.args, status: 'running'});
+  else if(ev.type === 'tool_call') bot.tools.push({id: ev.id, name: ev.name, args: ev.args, status: 'running', t0: Date.now()});
   else if(ev.type === 'tool_result'){
     const t = bot.tools.find(x => x.id === ev.id);
-    if(t){ t.result = ev.result; t.status = /^\{"error"/.test(ev.result) ? 'fail' : 'done'; }
+    if(t){
+      t.result = ev.result; t.ms = Date.now() - (t.t0 || Date.now());
+      t.status = ev.result.includes('menunggu_persetujuan_pengguna') ? 'wait' : /^\{"error"/.test(ev.result) ? 'fail' : 'done';
+    }
+  }else if(ev.type === 'approval_request'){
+    (bot.approvals = bot.approvals || []).push({id: ev.id, name: ev.name, group: ev.group, args: ev.args, exp: ev.exp, token: ev.token, status: 'pending'});
   }else if(ev.type === 'error') bot.error = ev.message;
 }
 
@@ -988,7 +1089,7 @@ function settingsBody(){
     x.onclick = () => { state.settings.theme = v; save(); applyTheme(); seg.querySelectorAll('button').forEach(y => y.classList.toggle('on', y === x)); }; seg.append(x);
   }
   b.append(seg, el('h3', '', 'Tools'));
-  b.append(switchRow('Izinkan aksi eksternal (CI/CD & mutasi)', 'Mis. menjalankan workflow GitHub Actions. Bila mati, tool bertanda Aksi tidak ditawarkan ke model.',
+  b.append(switchRow('Izinkan aksi eksternal (CI/CD & mutasi)', 'Mis. menjalankan workflow GitHub Actions. Bila mati, tool bertanda Aksi tidak ditawarkan ke model. Bila hidup, setiap aksi tetap menunggu tombol Setujui.',
     state.settings.allowActions, v => { state.settings.allowActions = v; save(); }, {tag: 'hati-hati'}));
   const groups = {};
   for(const t of state.config.tools){ (groups[t.group || 'Umum'] = groups[t.group || 'Umum'] || []).push(t); }
@@ -1077,6 +1178,10 @@ async function init(){
   for(const m of state.config.models){ const o = el('option', '', m.label); o.value = m.key; sel.append(o); }
   state.chats = state.chats.filter(c => state.config.models.some(m => m.key === c.model));
   if(!state.chats.some(c => c.id === state.activeId)) state.activeId = state.chats[0]?.id || null;
+  // Kartu yang tertinggal "Menjalankan…" (halaman dimuat ulang saat aksi berjalan) tidak boleh macet
+  state.chats.forEach(c => c.messages.forEach(m => (m.approvals || []).forEach(a => {
+    if(a.status === 'running'){ a.status = 'fail'; a.result = 'Status tidak diketahui (halaman dimuat ulang). Cek hasilnya manual.'; }
+  })));
   if(!state.activeId) newChat(); else renderAll();
 
   sel.onchange = () => { const c = active(); if(c){ c.model = sel.value; save(); } store.set('bc.model', sel.value); };
@@ -1115,6 +1220,7 @@ async function init(){
     if(!s.configured) showGate('APP_PASSWORD belum diset di environment server.');
     else if(!s.ok) showGate();
   }catch{}
+  window.__ready = true;
 }
 init();
 </script>

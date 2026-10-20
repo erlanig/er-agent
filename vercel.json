@@ -1,5 +1,1 @@
-{
-  "functions": {
-    "app.py": { "maxDuration": 60 }
-  }
-}
+{"functions": {"app.py": {"maxDuration": 300}}}

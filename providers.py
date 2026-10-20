@@ -14,7 +14,11 @@ from approvals import PENDING_RESULT, make_request, needs_approval
 from tools import execute_tool, tool_specs
 
 MAX_STEPS = 8
-MAX_TOKENS = 6000
+MAX_TOKENS = int(os.getenv("MAX_TOKENS", "16000"))
+MAX_CONTINUES = 4
+_CONT_MSG = "Lanjutkan persis dari kata terakhir tanpa mengulang apa pun dan tanpa pengantar."
+# Nama parameter batas token untuk GPT-OSS: "max_tokens" | "max_completion_tokens" | "" (jangan kirim)
+OPENAI_TOKEN_PARAM = os.getenv("OPENAI_TOKEN_PARAM", "max_tokens")
 
 MODELS = {
     "gpt-oss-120b": {
@@ -87,7 +91,8 @@ def system_prompt(extra: str = "", allow_actions: bool = True, approval: bool = 
     base = (
         "Kamu adalah ER Agent, asisten AI engineering & analitik tingkat lanjut yang tajam, jujur, dan terstruktur. "
         "Balas dalam bahasa yang dipakai pengguna. Gunakan Markdown: tabel saat membandingkan metrik/data, "
-        "blok kode dengan nama bahasa, dan LaTeX untuk rumus ($...$ inline, $$...$$ blok). "
+        "blok kode dengan nama bahasa, LaTeX untuk rumus ($...$ inline, $$...$$ blok), dan blok ```mermaid "
+        "untuk diagram alur/arsitektur bila membantu. "
         "Jika pengguna melampirkan file atau dokumen, analisis isinya secara teliti dan mendalam. "
         "Pakai tool bila membantu dan jangan mengarang hasil tool. "
         "ATURAN AGEN: (1) Kamu terhubung ke tool nyata (kalender, email, Drive, dll). Gunakan tool untuk "
@@ -221,15 +226,19 @@ def run_openai(model_id, history, allow_actions, enabled, extra, approval=False)
     ]
     msgs = _format_openai_messages(history, extra, allow_actions, approval)
 
-    for _ in range(MAX_STEPS):
+    steps = conts = 0
+    while steps < MAX_STEPS:
         kwargs = {"model": model_id, "messages": msgs, "stream": True}
+        if OPENAI_TOKEN_PARAM:
+            kwargs[OPENAI_TOKEN_PARAM] = MAX_TOKENS
         if tools:
             kwargs["tools"] = tools
 
-        text, calls = "", {}
+        text, calls, finish = "", {}, None
         for chunk in client.chat.completions.create(**kwargs):
             if not chunk.choices:
                 continue
+            finish = chunk.choices[0].finish_reason or finish
             delta = chunk.choices[0].delta
             if delta.content:
                 text += delta.content
@@ -244,8 +253,16 @@ def run_openai(model_id, history, allow_actions, enabled, extra, approval=False)
                     if tc.function.arguments:
                         slot["args"] += tc.function.arguments
 
+        # Terpotong karena batas token: lanjutkan otomatis (hanya bila tidak ada tool call)
+        if finish == "length" and text and not calls and conts < MAX_CONTINUES:
+            conts += 1
+            msgs.append({"role": "assistant", "content": text})
+            msgs.append({"role": "user", "content": _CONT_MSG})
+            continue
+
         if not calls:
             return
+        steps += 1
 
         ordered = [calls[i] for i in sorted(calls)]
         msgs.append({
@@ -279,7 +296,8 @@ def run_anthropic(base, model_id, history, allow_actions, enabled, extra, approv
     msgs = _format_anthropic_messages(history)
     system = system_prompt(extra, allow_actions, approval)
 
-    for _ in range(MAX_STEPS):
+    steps = conts = 0
+    while steps < MAX_STEPS:
         kwargs = {"model": model_id, "max_tokens": MAX_TOKENS, "system": system, "messages": msgs}
         if tools:
             kwargs["tools"] = tools
@@ -289,8 +307,20 @@ def run_anthropic(base, model_id, history, allow_actions, enabled, extra, approv
                 yield {"type": "text", "delta": piece}
             final = stream.get_final_message()
 
+        texts = [{"type": "text", "text": b.text} for b in final.content if b.type == "text" and b.text]
+        has_tool = any(b.type == "tool_use" for b in final.content)
+        # Terpotong karena batas token: lanjutkan otomatis (jangan bila ada tool_use setengah jadi)
+        if final.stop_reason == "max_tokens" and texts and not has_tool and conts < MAX_CONTINUES:
+            conts += 1
+            msgs.append({"role": "assistant", "content": texts})
+            msgs.append({"role": "user", "content": _CONT_MSG})
+            continue
+
         if final.stop_reason != "tool_use":
+            if final.stop_reason == "max_tokens":
+                yield {"type": "text", "delta": "\n\n_(Jawaban mencapai batas panjang.)_"}
             return
+        steps += 1
 
         assistant_blocks, results, had_text = [], [], False
         for b in final.content:
