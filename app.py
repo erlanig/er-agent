@@ -4,6 +4,7 @@ import hmac
 import io
 import json
 import os
+import re
 import time
 import zipfile
 import xml.etree.ElementTree as ET
@@ -15,6 +16,7 @@ load_dotenv()  # baca .env saat lokal; di Vercel dipakai Environment Variables
 from flask import Flask, Response, abort, jsonify, render_template, request, send_from_directory, stream_with_context  # noqa: E402
 
 import approvals  # noqa: E402
+import db  # noqa: E402
 from providers import MODELS, diagnose, run_chat  # noqa: E402
 from tools import google_status, integrations, tool_specs  # noqa: E402
 
@@ -23,8 +25,11 @@ app = Flask(__name__)
 MAX_MESSAGES = 40
 MAX_CHARS = 80_000
 MAX_INSTRUCTIONS = 6_000
+MAX_CHAT_BYTES = 1_500_000  # batas Vercel untuk body request adalah 4,5 MB
 SESSION_COOKIE = "bc_session"
 SESSION_DAYS = 30
+_ID_RE = re.compile(r"^[\w-]{1,40}$")
+_CHAT_KEYS = ("id", "title", "model", "messages", "pinned", "projectId", "updated")
 
 
 # --------------------------------------------------------------------------
@@ -170,7 +175,7 @@ def config():
             for t in tool_specs(allow_actions=True)
         ],
         integrations=integrations(),
-        features={"approval": True},  # UI baru memakai ini untuk mengaktifkan kartu persetujuan
+        features={"approval": True, "sync": db.enabled()},  # sync = riwayat disimpan di database server
     )
 
 
@@ -273,6 +278,89 @@ def action_route():
     except Exception as e:
         return jsonify(error=f"{type(e).__name__}: {e}"), 500
     return jsonify(out)
+
+
+# --------------------------------------------------------------------------
+# Sinkronisasi riwayat (Postgres)
+# --------------------------------------------------------------------------
+def _sync_guard():
+    """None bila boleh lanjut; selain itu response error."""
+    state = _auth_state()
+    if state != "ok":
+        return _auth_error(state)
+    if not db.enabled():
+        return jsonify(error="DATABASE_URL belum diset.", configured=False), 503
+    return None
+
+
+@app.get("/api/sync")
+def sync_pull():
+    err = _sync_guard()
+    if err:
+        return err
+    try:
+        chats, projects = db.load_all()
+    except Exception as e:
+        return jsonify(error=f"{type(e).__name__}: {e}"), 500
+    return jsonify(chats=chats, projects=projects)
+
+
+@app.put("/api/chats/<chat_id>")
+def sync_put_chat(chat_id: str):
+    err = _sync_guard()
+    if err:
+        return err
+    if not _ID_RE.match(chat_id):
+        return jsonify(error="ID tidak valid."), 400
+    raw = request.get_data()
+    if len(raw) > MAX_CHAT_BYTES:
+        return jsonify(error="Obrolan terlalu besar untuk disimpan di server."), 413
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return jsonify(error="JSON tidak valid."), 400
+    if not isinstance(data, dict) or data.get("id") != chat_id or not isinstance(data.get("messages"), list):
+        return jsonify(error="Data obrolan tidak valid."), 400
+    data = {k: data[k] for k in _CHAT_KEYS if k in data}
+    try:
+        db.upsert_chat(chat_id, data)
+    except Exception as e:
+        return jsonify(error=f"{type(e).__name__}: {e}"), 500
+    return jsonify(ok=True)
+
+
+@app.delete("/api/chats/<chat_id>")
+def sync_delete_chat(chat_id: str):
+    err = _sync_guard()
+    if err:
+        return err
+    if not _ID_RE.match(chat_id):
+        return jsonify(error="ID tidak valid."), 400
+    try:
+        db.delete_chat(chat_id)
+    except Exception as e:
+        return jsonify(error=f"{type(e).__name__}: {e}"), 500
+    return jsonify(ok=True)
+
+
+@app.put("/api/projects")
+def sync_put_projects():
+    err = _sync_guard()
+    if err:
+        return err
+    body = request.get_json(silent=True)
+    if not isinstance(body, list) or len(body) > 200:
+        return jsonify(error="Daftar proyek tidak valid."), 400
+    projects = [
+        {"id": str(p.get("id", ""))[:40], "name": str(p.get("name", ""))[:120],
+         "instructions": str(p.get("instructions", ""))[:6000], "open": bool(p.get("open"))}
+        for p in body if isinstance(p, dict) and _ID_RE.match(str(p.get("id", "")))
+    ]
+    try:
+        db.set_projects(projects)
+    except Exception as e:
+        return jsonify(error=f"{type(e).__name__}: {e}"), 500
+    return jsonify(ok=True)
 
 
 @app.post("/api/chat")

@@ -437,7 +437,79 @@ const project = id => state.projects.find(p => p.id === id);
 function save(){
   store.set('bc.chats', state.chats.slice(0, 120)); store.set('bc.projects', state.projects);
   store.set('bc.active', state.activeId); store.set('bc.settings', state.settings);
+  scheduleSync();
 }
+
+/* ------------------------------ sinkronisasi ke server (Postgres) ------------------------------ */
+// pushed = salinan terakhir yang diketahui ada di server (id -> JSON). Selisih dengan state = perlu dikirim/dihapus.
+const sync = {on: false, pushed: {}, proj: '', timer: 0, busy: false, again: false};
+// Gambar base64 tidak ikut disimpan di server (hanya teks + metadata file)
+function slimChat(c){
+  return {...c, messages: c.messages.map(m => {
+    const {images, ...r} = m;
+    if(r.files) r.files = r.files.map(f => ({name: f.name, size: f.size, kind: f.kind}));
+    return r;
+  })};
+}
+async function pullSync(){
+  if(!state.config.features?.sync) return false;
+  try{
+    const r = await fetch('/api/sync');
+    if(!r.ok) return false;
+    const j = await r.json(), last = store.get('bc.lastSync', 0);
+    const local = new Map(state.chats.map(c => [c.id, c])), merged = [];
+    sync.pushed = {};
+    for(const sc of j.chats){
+      const lc = local.get(sc.id); local.delete(sc.id);
+      sync.pushed[sc.id] = JSON.stringify(slimChat(sc));
+      merged.push(lc && (lc.updated || 0) > (sc.updated || 0) ? lc : sc);
+    }
+    // Obrolan yang hanya ada di lokal: simpan bila lebih baru dari sinkron terakhir (belum terkirim);
+    // bila lebih lama, berarti sudah dihapus dari perangkat lain.
+    for(const lc of local.values()) if((lc.updated || 0) > last) merged.push(lc);
+    state.chats = merged;
+    if(j.projects.length) state.projects = j.projects;
+    sync.proj = JSON.stringify(j.projects);
+    if(!state.chats.some(c => c.id === state.activeId)) state.activeId = state.chats[0]?.id || null;
+    store.set('bc.lastSync', Date.now());
+    sync.on = true; save();
+    return true;
+  }catch{ return false; }
+}
+function scheduleSync(){
+  if(!sync.on) return;
+  clearTimeout(sync.timer); sync.timer = setTimeout(pushSync, 1500);
+}
+async function pushSync(){
+  if(!sync.on) return;
+  if(sync.busy){ sync.again = true; return; }
+  sync.busy = true;
+  try{
+    const ids = new Set(state.chats.map(c => c.id));
+    for(const id of Object.keys(sync.pushed)){
+      if(ids.has(id)) continue;
+      const r = await fetch('/api/chats/' + id, {method: 'DELETE'});
+      if(r.status === 401){ showGate('Sesi berakhir. Masuk lagi.'); return; }
+      if(r.ok) delete sync.pushed[id];
+    }
+    for(const c of state.chats){
+      if(!c.messages.length || (busy && c.id === state.activeId)) continue; // obrolan kosong / sedang streaming
+      const body = JSON.stringify(slimChat(c));
+      if(sync.pushed[c.id] === body) continue;
+      const r = await fetch('/api/chats/' + c.id, {method: 'PUT', headers: {'Content-Type': 'application/json'}, body});
+      if(r.status === 401){ showGate('Sesi berakhir. Masuk lagi.'); return; }
+      if(r.ok) sync.pushed[c.id] = body;
+    }
+    const pj = JSON.stringify(state.projects);
+    if(pj !== sync.proj){
+      const r = await fetch('/api/projects', {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: pj});
+      if(r.ok) sync.proj = pj;
+    }
+    store.set('bc.lastSync', Date.now());
+  }catch{ /* offline / gagal: akan dicoba lagi pada save() berikutnya */ }
+  finally{ sync.busy = false; if(sync.again){ sync.again = false; scheduleSync(); } }
+}
+document.addEventListener('visibilitychange', () => { if(document.hidden && sync.on){ clearTimeout(sync.timer); pushSync(); } });
 
 /* ------------------------------ sidebar collapse ------------------------------ */
 function applySidebarState(){
@@ -1254,7 +1326,11 @@ function settingsBody(){
     }catch(e){ out.textContent = 'Gagal: ' + e.message; }
     run.disabled = false; run.textContent = 'Tes koneksi model';
   };
-  b.append(run, out, el('h3', '', 'Data'));
+  b.append(run, out, el('h3', '', 'Sinkronisasi riwayat'));
+  b.append(el('div', 'dsc', state.config.features?.sync
+    ? 'Aktif: obrolan dan proyek disimpan di database server, jadi tersedia di semua perangkat.'
+    : 'Belum aktif: set DATABASE_URL di environment server. Saat ini riwayat hanya di browser ini.'));
+  b.append(el('h3', '', 'Data'));
   const row = el('div', 'btns'); row.style.justifyContent = 'flex-start';
   const ex = el('button', 'btn', 'Ekspor riwayat'); ex.type = 'button';
   ex.onclick = () => { const a = el('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify({chats: state.chats, projects: state.projects}, null, 2)], {type: 'application/json'}));
@@ -1269,7 +1345,10 @@ function showGate(msg){ $('#pwErr').textContent = msg || ''; $('#gate').classLis
 async function login(e){
   e.preventDefault();
   const res = await fetch('/api/login', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({password: $('#pw').value})});
-  if(res.ok){ $('#gate').classList.remove('show'); $('#pw').value = ''; $('#input').focus(); }
+  if(res.ok){
+    $('#gate').classList.remove('show'); $('#pw').value = ''; $('#input').focus();
+    if(!sync.on && await pullSync()){ if(!state.activeId) newChat(); else renderAll(); }
+  }
   else{ const j = await res.json().catch(() => ({})); $('#pwErr').textContent = j.error || 'Gagal masuk.'; }
 }
 
@@ -1292,9 +1371,11 @@ async function init(){
   setBusy(false); applyTheme(); applySidebarState();
 
   try{ state.config = await (await fetch('/api/config')).json(); }catch{}
+  await pullSync(); // bila belum login (401) dilewati; dicoba lagi setelah login
   const sel = $('#model');
   for(const m of state.config.models){ const o = el('option', '', m.label); o.value = m.key; sel.append(o); }
-  state.chats = state.chats.filter(c => state.config.models.some(m => m.key === c.model));
+  // Model tak dikenal dialihkan ke model pertama (bukan dihapus, agar riwayat di server aman)
+  state.chats.forEach(c => { if(!state.config.models.some(m => m.key === c.model)) c.model = state.config.models[0]?.key; });
   if(!state.chats.some(c => c.id === state.activeId)) state.activeId = state.chats[0]?.id || null;
   // Kartu yang tertinggal "Menjalankan…" (halaman dimuat ulang saat aksi berjalan) tidak boleh macet
   state.chats.forEach(c => c.messages.forEach(m => (m.approvals || []).forEach(a => {
