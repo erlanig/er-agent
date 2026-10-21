@@ -154,6 +154,7 @@ svg{display:block;flex:none}
 .code-h{display:flex;align-items:center;justify-content:space-between;padding:6px 10px 6px 14px;border-bottom:1px solid var(--line);font-size:12px;color:var(--muted);font-family:var(--mono)}
 .code-h button{display:flex;align-items:center;gap:6px;border:0;background:none;color:var(--muted);padding:3px 8px;border-radius:7px;font-family:var(--sans);font-size:12px}
 .code-h button:hover{background:var(--hover);color:var(--ink)}
+.code-h .code-tools{display:flex;gap:2px}
 .code pre{margin:0;padding:14px;overflow:auto}
 .code pre code{font-family:var(--mono);font-size:13px;line-height:1.6;background:none!important;padding:0!important;border:0}
 .hljs{background:transparent!important}
@@ -196,11 +197,12 @@ svg{display:block;flex:none}
 .appr.done{border-color:var(--ok)}.appr.fail,.appr.rejected,.appr.expired{border-color:var(--err)}
 .appr-h{display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--warn-soft)}
 .appr-h b{font-family:var(--mono);font-weight:600}
-.appr-kv{display:grid;grid-template-columns:110px 1fr;gap:4px 10px;padding:8px 12px;border-top:1px solid var(--line)}
+.appr-kv{display:grid;grid-template-columns:110px 1fr;gap:4px 10px;padding:8px 12px;border-top:1px solid var(--line);max-height:320px;overflow:auto}
 .appr-kv span:nth-child(odd){color:var(--muted)}
 .appr-kv span:nth-child(even){white-space:pre-wrap;word-break:break-word}
 .appr-b{display:flex;gap:8px;justify-content:flex-end;padding:8px 12px;border-top:1px solid var(--line)}
 .appr-s{padding:8px 12px;border-top:1px solid var(--line);color:var(--muted);word-break:break-word}
+.appr-s a{color:var(--accent);font-weight:600}
 .btn:disabled{opacity:.5;cursor:default}
 
 /* Mermaid & truncation notice */
@@ -459,7 +461,9 @@ const closeSide = () => { $('#side').classList.remove('open'); $('#backdrop').cl
 const mq = matchMedia('(prefers-color-scheme: dark)');
 const isDark = () => state.settings.theme === 'auto' ? mq.matches : state.settings.theme === 'dark';
 function initMermaid(){
-  if(window.mermaid) mermaid.initialize({startOnLoad: false, securityLevel: 'strict', theme: isDark() ? 'dark' : 'default'});
+  // htmlLabels:false -> label berupa <text> SVG murni, sehingga aman dikonversi ke PNG lewat canvas
+  if(window.mermaid) mermaid.initialize({startOnLoad: false, securityLevel: 'strict',
+    theme: isDark() ? 'dark' : 'default', flowchart: {htmlLabels: false}});
 }
 function applyTheme(){
   const t = state.settings.theme, root = document.documentElement;
@@ -496,9 +500,14 @@ function renderMarkdown(src){
 let mmSeq = 0;
 function renderMermaid(pre, src){
   const box = el('div', 'mermaid-box'), head = el('div', 'code-h'), view = el('div', 'mm-view');
-  const b = el('button'); b.type = 'button'; b.append(ico('copy', 13), document.createTextNode('Salin'));
+  const tools = el('span', 'code-tools');
+  const bi = el('button'); bi.type = 'button'; bi.title = 'Salin sebagai gambar PNG (tempel ke Word/Docs)';
+  bi.append(ico('copy', 13), document.createTextNode('Salin gambar'));
+  bi.onclick = () => copyMermaidImage(src, bi);
+  const b = el('button'); b.type = 'button'; b.append(ico('copy', 13), document.createTextNode('Salin kode'));
   b.onclick = () => copyText(src, b);
-  head.append(el('span', '', 'mermaid'), b); box.append(head, view); pre.replaceWith(box);
+  tools.append(bi, b);
+  head.append(el('span', '', 'mermaid'), tools); box.append(head, view); pre.replaceWith(box);
   mermaid.render('mm' + (++mmSeq) + uid(), src)
     .then(r => { view.innerHTML = r.svg; })
     .catch(e => {
@@ -525,6 +534,95 @@ async function copyText(text, btn){
   if(!btn) return; const old = [...btn.childNodes];
   btn.replaceChildren(ico('check', 13), document.createTextNode('Tersalin'));
   setTimeout(() => btn.replaceChildren(...old), 1300);
+}
+
+/* ---------------------- salin kaya format (Word / Google Docs) ---------------------- */
+// Render Mermaid dengan tema terang + latar putih, lalu ubah ke PNG (terbaca di dokumen putih)
+async function mermaidPng(src){
+  mermaid.initialize({startOnLoad: false, securityLevel: 'strict', theme: 'default', flowchart: {htmlLabels: false}});
+  try{
+    const {svg} = await mermaid.render('mc' + (++mmSeq) + uid(), src);
+    const s = new DOMParser().parseFromString(svg, 'image/svg+xml').documentElement;
+    const vb = (s.getAttribute('viewBox') || '').split(/[\s,]+/).map(Number);
+    const w = Math.ceil(vb[2] || 800), h = Math.ceil(vb[3] || 600);
+    s.setAttribute('width', w); s.setAttribute('height', h);
+    const img = new Image();
+    await new Promise((ok, no) => {
+      img.onload = ok; img.onerror = no;
+      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(new XMLSerializer().serializeToString(s));
+    });
+    const k = 2, cv = document.createElement('canvas'); cv.width = w * k; cv.height = h * k;
+    const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.scale(k, k); ctx.drawImage(img, 0, 0, w, h);
+    return {dataUrl: cv.toDataURL('image/png'), w, h};
+  } finally {
+    initMermaid();
+    document.querySelectorAll('[id^="dmc"]').forEach(x => x.remove());
+  }
+}
+// Word & Docs mengabaikan class/variabel CSS: semua gaya harus inline
+const OFFICE_STYLE = {
+  h1: 'font-size:20pt;font-weight:bold;margin:16pt 0 6pt',
+  h2: 'font-size:16pt;font-weight:bold;margin:14pt 0 6pt',
+  h3: 'font-size:13pt;font-weight:bold;margin:12pt 0 4pt',
+  h4: 'font-size:11pt;font-weight:bold;margin:10pt 0 4pt',
+  p: 'margin:0 0 8pt', ul: 'margin:0 0 8pt', ol: 'margin:0 0 8pt', li: 'margin:0 0 3pt',
+  blockquote: 'margin:8pt 0;padding-left:10pt;border-left:3pt solid #4f46e5;color:#475569',
+  table: 'border-collapse:collapse;width:100%;margin:8pt 0',
+  th: 'border:1px solid #94a3b8;padding:5pt 8pt;background:#e2e8f0;font-weight:bold;text-align:left;vertical-align:top',
+  td: 'border:1px solid #94a3b8;padding:5pt 8pt;vertical-align:top',
+  pre: 'font-family:Consolas,"Courier New",monospace;font-size:9.5pt;background:#f1f5f9;border:1px solid #cbd5e1;padding:8pt;margin:8pt 0;white-space:pre-wrap',
+  hr: 'border:0;border-top:1px solid #cbd5e1;margin:12pt 0'
+};
+function styleForOffice(root){
+  for(const [tag, css] of Object.entries(OFFICE_STYLE)) root.querySelectorAll(tag).forEach(e => e.setAttribute('style', css));
+  root.querySelectorAll('table').forEach(t => { t.setAttribute('border', '1'); t.setAttribute('cellpadding', '6'); t.setAttribute('cellspacing', '0'); });
+  root.querySelectorAll(':not(pre)>code').forEach(c => c.setAttribute('style', 'font-family:Consolas,"Courier New",monospace;background:#f1f5f9'));
+  root.querySelectorAll('pre code').forEach(c => c.setAttribute('style', 'font-family:Consolas,"Courier New",monospace'));
+  root.querySelectorAll('[class]').forEach(e => e.removeAttribute('class'));
+}
+async function richHtml(md){
+  const tmp = document.createElement('div');
+  tmp.innerHTML = renderMarkdown(md);
+  for(const code of [...tmp.querySelectorAll('pre > code.language-mermaid')]){
+    try{
+      const p = await mermaidPng(code.textContent), w = Math.min(p.w, 640);
+      const img = document.createElement('img');
+      img.src = p.dataUrl; img.alt = 'Diagram'; img.width = w; img.height = Math.round(p.h * w / p.w);
+      code.parentElement.replaceWith(img);
+    }catch{ /* diagram gagal dirender: biarkan sebagai blok kode */ }
+  }
+  tmp.querySelectorAll('.katex-html').forEach(x => x.remove()); // sisakan MathML, hindari rumus ganda
+  tmp.querySelectorAll('.tbl').forEach(d => d.replaceWith(...d.childNodes));
+  styleForOffice(tmp);
+  return '<div style="font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#000;line-height:1.4">' + tmp.innerHTML + '</div>';
+}
+function flash(btn, old, label){
+  btn.replaceChildren(ico('check', 13), document.createTextNode(label));
+  setTimeout(() => btn.replaceChildren(...old), 1400);
+}
+async function copyRich(md, btn){
+  const old = [...btn.childNodes];
+  if(!window.ClipboardItem) return copyText(md, btn);
+  btn.replaceChildren(document.createTextNode('Menyiapkan…'));
+  try{
+    // Promise di dalam ClipboardItem tetap dianggap user gesture (Chrome/Safari)
+    const html = richHtml(md).then(h => new Blob([h], {type: 'text/html'}));
+    await navigator.clipboard.write([new ClipboardItem({
+      'text/html': html, 'text/plain': new Blob([md], {type: 'text/plain'})
+    })]);
+    flash(btn, old, 'Tersalin');
+  }catch{ btn.replaceChildren(...old); copyText(md, btn); }
+}
+async function copyMermaidImage(src, btn){
+  const old = [...btn.childNodes];
+  if(!window.ClipboardItem) return;
+  btn.replaceChildren(document.createTextNode('Menyiapkan…'));
+  try{
+    const blob = mermaidPng(src).then(p => fetch(p.dataUrl).then(r => r.blob()));
+    await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
+    flash(btn, old, 'Tersalin');
+  }catch{ flash(btn, old, 'Gagal'); }
 }
 
 /* ------------------------------ file attachments & extraction ------------------------------ */
@@ -641,6 +739,9 @@ function updateDynamicPrompts(){
     } else if(/(email|gmail|surel|inbox|balas)/.test(val)){
       prompts.push('Ringkas email belum dibaca di inbox saya');
       prompts.push('Siapkan draft balasan email (jangan kirim dulu)');
+    } else if(/(dokumen|docs|laporan|notulen|notulensi)/.test(val)){
+      prompts.push('Buatkan dokumen Google Docs berformat rapi dari topik ini');
+      prompts.push('Susun kerangka laporan lengkap dengan tabel & diagram alur');
     } else if(/(hitung|rumus|persen|ppn|bunga|simulasi|saham|valuasi)/.test(val)){
       prompts.push('Hitung langkah demi langkah menggunakan tool kalkulator & tampilkan tabelnya');
     } else if(val.length > 4){
@@ -806,6 +907,17 @@ function renderSidebar(){
 
 /* ------------------------------ approval cards ------------------------------ */
 const STATUS_TXT = {pending: 'Menunggu persetujuan', running: 'Menjalankan…', done: 'Disetujui & berhasil', fail: 'Gagal', rejected: 'Ditolak', expired: 'Kedaluwarsa'};
+// Hasil aksi: tampilkan link (mis. dokumen Google Docs yang baru dibuat) sebagai tautan yang bisa diklik
+function approvalResult(text){
+  const d = el('div', 'appr-s');
+  const m = String(text).match(/https:\/\/[^\s"\\]+/);
+  d.append(document.createTextNode(text));
+  if(m){
+    const a = el('a', '', 'Buka'); a.href = m[0]; a.target = '_blank'; a.rel = 'noopener noreferrer';
+    d.append(document.createTextNode('  '), a);
+  }
+  return d;
+}
 function approvalCard(a, live){
   if(a.status === 'pending' && a.exp * 1000 < Date.now()) a.status = 'expired';
   const box = el('div', 'appr ' + a.status), h = el('div', 'appr-h');
@@ -819,7 +931,7 @@ function approvalCard(a, live){
     no.type = ok.type = 'button'; no.disabled = ok.disabled = !!(live || busy);
     no.onclick = () => decide(a, false); ok.onclick = () => decide(a, true);
     row.append(no, ok); box.append(row);
-  } else if(a.result) box.append(el('div', 'appr-s', a.result));
+  } else if(a.result) box.append(approvalResult(a.result));
   return box;
 }
 async function decide(a, ok){
@@ -854,6 +966,7 @@ function renderEmpty(){
     'Analisis Dokumen & Kode',
     'Kalkulasi & Data Insight',
     'Kalender, Email & Drive',
+    'Tulis ke Google Docs',
     'Eksekusi Tool & Otomatisasi'
   ];
   for(const label of items){
@@ -916,8 +1029,13 @@ function renderMsg(m, opts = {}){
     main.append(n);
   }
   if(!opts.live && m.content){
-    const a = el('div', 'acts-row'), cp = el('button'); cp.type = 'button'; cp.append(ico('copy', 14), document.createTextNode('Salin'));
-    cp.onclick = () => copyText(m.content, cp); a.append(cp);
+    const a = el('div', 'acts-row');
+    const cp = el('button'); cp.type = 'button'; cp.append(ico('copy', 14), document.createTextNode('Salin'));
+    cp.title = 'Salin dengan format (tabel rapi, diagram jadi gambar) untuk Word / Google Docs';
+    cp.onclick = () => copyRich(m.content, cp);
+    const cm = el('button'); cm.type = 'button'; cm.append(ico('copy', 14), document.createTextNode('Markdown'));
+    cm.title = 'Salin teks Markdown mentah'; cm.onclick = () => copyText(m.content, cm);
+    a.append(cp, cm);
     if(opts.last){ const rg = el('button'); rg.type = 'button'; rg.append(ico('refresh', 14), document.createTextNode('Ulangi')); rg.onclick = regenerate; a.append(rg); }
     main.append(a);
   }
@@ -1089,7 +1207,7 @@ function settingsBody(){
     x.onclick = () => { state.settings.theme = v; save(); applyTheme(); seg.querySelectorAll('button').forEach(y => y.classList.toggle('on', y === x)); }; seg.append(x);
   }
   b.append(seg, el('h3', '', 'Tools'));
-  b.append(switchRow('Izinkan aksi eksternal (CI/CD & mutasi)', 'Mis. menjalankan workflow GitHub Actions. Bila mati, tool bertanda Aksi tidak ditawarkan ke model. Bila hidup, setiap aksi tetap menunggu tombol Setujui.',
+  b.append(switchRow('Izinkan aksi eksternal (CI/CD & mutasi)', 'Mis. menjalankan workflow GitHub Actions atau membuat Google Docs. Bila mati, tool bertanda Aksi tidak ditawarkan ke model. Bila hidup, setiap aksi tetap menunggu tombol Setujui.',
     state.settings.allowActions, v => { state.settings.allowActions = v; save(); }, {tag: 'hati-hati'}));
   const groups = {};
   for(const t of state.config.tools){ (groups[t.group || 'Umum'] = groups[t.group || 'Umum'] || []).push(t); }
