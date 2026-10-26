@@ -1,7 +1,8 @@
 """Ambil GOOGLE_REFRESH_TOKEN untuk ER Agent (jalankan SEKALI di komputer lokal).
 
 Persiapan:
-  1. Google Cloud Console -> buat project -> aktifkan API: Calendar, Gmail, Drive, Sheets, Tasks, People.
+  1. Google Cloud Console -> buat project -> aktifkan API:
+     Calendar, Gmail, Drive, Sheets, Tasks, People, DAN Google Docs API.
   2. OAuth consent screen: isi data app, tambahkan email kamu sebagai Test user,
      lalu klik "Publish app" (In production) supaya refresh token tidak kedaluwarsa 7 hari.
   3. Credentials -> Create OAuth client ID -> tipe "Desktop app".
@@ -10,7 +11,10 @@ Persiapan:
          python google_auth.py
 
   5. Login di browser, izinkan semua akses. Salin GOOGLE_REFRESH_TOKEN yang tercetak
-     ke .env dan ke Environment Variables Vercel.
+     ke .env dan ke Environment Variables Vercel, lalu redeploy.
+
+Bila scope berubah (seperti file ini), cabut akses lama di myaccount.google.com/permissions
+lalu jalankan ulang supaya Google menerbitkan refresh token baru dengan scope lengkap.
 """
 import http.server
 import os
@@ -28,8 +32,10 @@ PORT = 8765
 REDIRECT = f"http://localhost:{PORT}/"
 SCOPES = [
     "https://www.googleapis.com/auth/calendar",
-    "https://www.googleapis.com/auth/gmail.modify",
-    "https://www.googleapis.com/auth/drive.readonly",
+    "https://www.googleapis.com/auth/gmail.modify",       # baca, kirim, draft, arsip
+    "https://www.googleapis.com/auth/drive.readonly",     # baca semua file
+    "https://www.googleapis.com/auth/drive.file",         # BUAT file/folder/Docs baru (wajib untuk gdocs_create)
+    "https://www.googleapis.com/auth/documents",          # baca & ubah Google Docs
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/tasks",
     "https://www.googleapis.com/auth/contacts.readonly",

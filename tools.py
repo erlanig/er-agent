@@ -8,6 +8,8 @@ Cara menambah tool baru: tulis fungsi Python lalu dekorasi dengan @tool(...).
 - group           -> pengelompokan di halaman Pengaturan.
 - requires        -> "google" | "github" | "telegram". Tool disembunyikan dari model
                      kalau integrasinya belum dikonfigurasi di environment.
+
+Tool tambahan ada di tools_extra.py (diimpor di bagian paling bawah file ini).
 """
 import ast
 import base64
@@ -1253,3 +1255,10 @@ def telegram_send(text: str, chat_id: str | None = None):
     if not r.ok:
         raise RuntimeError(f"Telegram membalas {r.status_code}: {r.text[:200]}")
     return {"ok": True, "message_id": r.json()["result"]["message_id"]}
+
+
+# --------------------------------------------------------------------------
+# Tool tambahan (penjadwalan, catatan, dll). HARUS di paling bawah: modul ini
+# mengimpor helper dari file ini dan mendaftarkan tool-nya ke _REGISTRY.
+# --------------------------------------------------------------------------
+import tools_extra  # noqa: E402,F401

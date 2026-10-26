@@ -19,6 +19,7 @@ import approvals  # noqa: E402
 import db  # noqa: E402
 from providers import MODELS, diagnose, run_chat  # noqa: E402
 from tools import google_status, integrations, tool_specs  # noqa: E402
+from tools_extra import run_due_jobs  # noqa: E402
 
 app = Flask(__name__)
 
@@ -278,6 +279,24 @@ def action_route():
     except Exception as e:
         return jsonify(error=f"{type(e).__name__}: {e}"), 500
     return jsonify(out)
+
+
+# --------------------------------------------------------------------------
+# Cron: kirim email / Telegram terjadwal yang sudah jatuh tempo
+# --------------------------------------------------------------------------
+@app.route("/api/cron/run-jobs", methods=["GET", "POST"])
+def cron_run_jobs():
+    """Dipanggil berkala (cron-job.org / GitHub Actions / Vercel Cron) dengan
+    header `Authorization: Bearer <CRON_SECRET>` (atau ?key=<CRON_SECRET>)."""
+    secret = os.getenv("CRON_SECRET", "")
+    auth = request.headers.get("Authorization", "")
+    given = auth[7:] if auth.startswith("Bearer ") else request.args.get("key", "")
+    if not secret or not hmac.compare_digest(given.encode(), secret.encode()):
+        return jsonify(error="Unauthorized"), 401
+    try:
+        return jsonify(run_due_jobs())
+    except Exception as e:
+        return jsonify(error=f"{type(e).__name__}: {e}"), 500
 
 
 # --------------------------------------------------------------------------

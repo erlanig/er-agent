@@ -1,4 +1,11 @@
-"""Lapisan model ER Agent: GPT-OSS via Chat Completions (Mantle), Claude via Anthropic Messages."""
+"""Lapisan model ER Agent: GPT-OSS via Chat Completions (Mantle), Claude via Anthropic Messages.
+
+Optimasi kecepatan:
+- Tool yang dipanggil dalam satu langkah dijalankan PARALEL.
+- Hanya grup tool yang relevan dengan percakapan yang dikirim ke model (TOOL_ROUTING=0 untuk mematikan).
+- Riwayat dipangkas (HISTORY_LIMIT) dan gambar lama tidak dikirim ulang.
+- GPT-OSS memakai reasoning_effort rendah (OPENAI_REASONING_EFFORT = low | medium | high | kosong).
+"""
 import json
 import os
 import re
@@ -8,7 +15,7 @@ from zoneinfo import ZoneInfo
 
 import anthropic
 from anthropic import Anthropic
-from openai import OpenAI
+from openai import BadRequestError, OpenAI
 
 from approvals import PENDING_RESULT, make_request, needs_approval
 from tools import execute_tool, tool_specs
@@ -16,6 +23,9 @@ from tools import execute_tool, tool_specs
 MAX_STEPS = 8
 MAX_TOKENS = int(os.getenv("MAX_TOKENS", "16000"))
 MAX_CONTINUES = 4
+HISTORY_LIMIT = int(os.getenv("HISTORY_LIMIT", "24"))
+TOOL_ROUTING = os.getenv("TOOL_ROUTING", "1") != "0"
+REASONING = os.getenv("OPENAI_REASONING_EFFORT", "low").strip()
 _CONT_MSG = "Lanjutkan persis dari kata terakhir tanpa mengulang apa pun dan tanpa pengantar."
 # Nama parameter batas token untuk GPT-OSS: "max_tokens" | "max_completion_tokens" | "" (jangan kirim)
 OPENAI_TOKEN_PARAM = os.getenv("OPENAI_TOKEN_PARAM", "max_tokens")
@@ -62,14 +72,46 @@ MODELS = {
 
 _RESOLVED: dict[str, tuple[str, str]] = {}
 _RETRYABLE = (anthropic.NotFoundError, anthropic.BadRequestError, anthropic.PermissionDeniedError)
+_reasoning_ok = True
 
+# --------------------------------------------------------------------------
+# Routing tool: kirim ke model hanya grup yang relevan (prompt lebih kecil = respons lebih cepat)
+# --------------------------------------------------------------------------
+_CORE_GROUPS = {"Umum", "Web", "Catatan"}
+_ROUTES = {
+    "Google Calendar": r"jadwal|kalender|calendar|meeting|rapat|agenda|event|slot|undang|gcal|hari ini|besok|minggu|pekan|lusa",
+    "Gmail": r"e-?mail|gmail|surel|inbox|balas|draft|kirim|lampiran",
+    "Google Drive": r"drive|sheet|spreadsheet|excel|folder|file|berkas|gsheets|gdrive|tabel",
+    "Google Docs": r"\bdocs?\b|dokumen|laporan|notulen|notulensi|proposal|memo|gdocs|surat",
+    "Google Tasks": r"tugas|task|todo|to-do|kontak|contact|gtasks|gcontacts",
+    "GitHub": r"github|repo|workflow|ci/?cd|issue|pull request|\bpr\b|commit|deploy|actions",
+    "Telegram": r"telegram|ingatkan|pengingat|reminder",
+    "Penjadwalan": r"jadwal|schedule|ingat|remind|nanti|pukul|\bjam\b|terjadwal|batalkan|cron",
+}
+
+
+def _route_tools(specs: list[dict], history: list[dict]) -> list[dict]:
+    if not TOOL_ROUTING:
+        return specs
+    # Teks pengguna ada di AKHIR pesan (isi file lampiran ditaruh di depan)
+    text = " ".join(m["content"][-600:].lower() for m in history[-4:] if m["role"] == "user")
+    keep = set(_CORE_GROUPS)
+    for group, rx in _ROUTES.items():
+        if re.search(rx, text):
+            keep.add(group)
+    return [t for t in specs if t["group"] in keep]
+
+
+# --------------------------------------------------------------------------
+# System prompt
+# --------------------------------------------------------------------------
 _RULE_MANUAL = (
     "(2) Sebelum mengirim email, membuat/mengubah/menghapus event, menulis ke Sheets, membuat Google Docs, "
     "atau aksi lain yang mengubah data, tampilkan ringkasan lengkap (penerima, subjek, isi, waktu, dll) dan "
     "tunggu pengguna menjawab setuju. Untuk email, tawarkan gmail_create_draft bila pengguna belum yakin. "
 )
 _RULE_APPROVAL = (
-    "(2) Untuk aksi yang mengubah data (kirim email, buat/ubah/hapus event, tulis ke Sheets, buat/tambah isi "
+    "(2) Untuk aksi yang mengubah data (kirim/jadwalkan email, buat/ubah/hapus event, tulis ke Sheets, buat/ubah "
     "Google Docs, tambah/selesaikan tugas, trigger CI/CD, kirim Telegram), JANGAN meminta konfirmasi lewat "
     "teks. Langsung panggil tool dengan argumen lengkap dan benar; antarmuka akan menampilkan kartu "
     "persetujuan berisi detailnya dan pengguna menekan Setujui atau Tolak. Setelah memanggil, cukup satu "
@@ -90,11 +132,12 @@ def system_prompt(extra: str = "", allow_actions: bool = True, approval: bool = 
     now = datetime.now(ZoneInfo(os.getenv("APP_TZ", "Asia/Jakarta"))).strftime("%A, %d %B %Y %H:%M WIB")
     base = (
         "Kamu adalah ER Agent, asisten AI engineering & analitik tingkat lanjut yang tajam, jujur, dan terstruktur. "
-        "Balas dalam bahasa yang dipakai pengguna. Gunakan Markdown: tabel saat membandingkan metrik/data, "
+        "Balas dalam bahasa yang dipakai pengguna. Jawab langsung ke inti, tanpa basa-basi panjang. "
+        "Gunakan Markdown: tabel saat membandingkan metrik/data, "
         "blok kode dengan nama bahasa, LaTeX untuk rumus ($...$ inline, $$...$$ blok), dan blok ```mermaid "
         "untuk diagram alur/arsitektur bila membantu. "
         "Jika pengguna melampirkan file atau dokumen, analisis isinya secara teliti dan mendalam. "
-        "Pakai tool bila membantu dan jangan mengarang hasil tool. "
+        "Pakai tool hanya bila membantu, panggil beberapa tool sekaligus bila saling bebas, dan jangan mengarang hasil tool. "
         "ATURAN AGEN: (1) Kamu terhubung ke tool nyata (kalender, email, Drive, dll). Gunakan tool untuk "
         "mengambil data sungguhan; jangan menebak isi kalender atau email. "
         + (_RULE_APPROVAL if approval else _RULE_MANUAL)
@@ -108,6 +151,10 @@ def system_prompt(extra: str = "", allow_actions: bool = True, approval: bool = 
         "Markdown lengkap (boleh berisi tabel dan blok ```mermaid untuk diagram); jangan menuliskan ulang "
         "seluruh isinya di chat, cukup ringkas singkat. gdocs_append hanya untuk menambah teks biasa ke "
         "dokumen yang sudah ada. "
+        "(6) Untuk mengirim email atau pesan Telegram pada waktu tertentu di masa depan, pakai gmail_schedule_send "
+        "atau telegram_schedule dengan run_at berformat ISO lengkap (mis. 2026-10-27T09:00+07:00); email "
+        "terjadwal dikirim oleh server pada waktu itu. Gunakan schedule_list / schedule_cancel untuk melihat atau "
+        "membatalkan. Gunakan note_save bila pengguna minta dicatat atau diingat. "
     )
     if not allow_actions:
         base += _ACTIONS_OFF
@@ -117,6 +164,9 @@ def system_prompt(extra: str = "", allow_actions: bool = True, approval: bool = 
     return base
 
 
+# --------------------------------------------------------------------------
+# Klien
+# --------------------------------------------------------------------------
 def _base_url() -> str:
     return os.environ["BEDROCK_BASE_URL"].rstrip("/")
 
@@ -168,16 +218,41 @@ def _parse_args(raw: str) -> dict:
         return {}
 
 
-def _run_tool(call_id, name, args, allow_actions, enabled, approval=False):
-    yield {"type": "tool_call", "id": call_id, "name": name, "args": args}
-    if approval and needs_approval(name, allow_actions, enabled):
-        # Jangan jalankan: minta persetujuan lewat UI (POST /api/action).
-        yield make_request(call_id, name, args)
-        result = PENDING_RESULT
-    else:
-        result = execute_tool(name, args, allow_actions, enabled)
-    yield {"type": "tool_result", "id": call_id, "name": name, "result": result[:3000]}
-    return result[:14000]
+# --------------------------------------------------------------------------
+# Riwayat & eksekusi tool
+# --------------------------------------------------------------------------
+def _prepare_history(history: list[dict]) -> list[dict]:
+    """Pangkas riwayat; gambar hanya dikirim dari pesan terakhir yang memuat gambar."""
+    h = history[-HISTORY_LIMIT:]
+    while h and h[0]["role"] != "user":
+        h = h[1:]
+    last_img = max((i for i, m in enumerate(h) if m.get("images")), default=-1)
+    return [m if i == last_img else {**m, "images": []} for i, m in enumerate(h)]
+
+
+def _run_tools(calls, allow_actions, enabled, approval):
+    """calls = [(id, name, args)]. Tool dijalankan paralel; kartu persetujuan tidak dijalankan.
+
+    Mengembalikan dict id -> hasil (untuk dikirim balik ke model).
+    """
+    results: dict[str, str] = {}
+    to_run = []
+    for cid, name, args in calls:
+        yield {"type": "tool_call", "id": cid, "name": name, "args": args}
+        if approval and needs_approval(name, allow_actions, enabled):
+            yield make_request(cid, name, args)
+            results[cid] = PENDING_RESULT
+            yield {"type": "tool_result", "id": cid, "name": name, "result": PENDING_RESULT[:3000]}
+        else:
+            to_run.append((cid, name, args))
+    if to_run:
+        with ThreadPoolExecutor(max_workers=min(6, len(to_run))) as pool:
+            futs = {cid: pool.submit(execute_tool, name, args, allow_actions, enabled) for cid, name, args in to_run}
+            for cid, name, _ in to_run:
+                res = futs[cid].result()
+                results[cid] = res[:14000]
+                yield {"type": "tool_result", "id": cid, "name": name, "result": res[:3000]}
+    return results
 
 
 def _format_openai_messages(history: list[dict], extra: str, allow_actions: bool, approval: bool) -> list[dict]:
@@ -222,11 +297,28 @@ def _format_anthropic_messages(history: list[dict]) -> list[dict]:
 # --------------------------------------------------------------------------
 # GPT-OSS (OpenAI-compatible)
 # --------------------------------------------------------------------------
+def _open_stream(client, kwargs):
+    """Buka stream; bila endpoint menolak reasoning_effort, matikan dan coba lagi (sekali seumur proses)."""
+    global _reasoning_ok
+    if REASONING and _reasoning_ok:
+        kwargs["extra_body"] = {"reasoning_effort": REASONING}
+    try:
+        return client.chat.completions.create(**kwargs)
+    except BadRequestError:
+        if "extra_body" in kwargs:
+            _reasoning_ok = False
+            kwargs.pop("extra_body")
+            return client.chat.completions.create(**kwargs)
+        raise
+
+
 def run_openai(model_id, history, allow_actions, enabled, extra, approval=False):
+    history = _prepare_history(history)
     client = _openai_client()
+    specs = _route_tools(tool_specs(allow_actions, enabled, available_only=True), history)
     tools = [
         {"type": "function", "function": {"name": t["name"], "description": t["description"], "parameters": t["schema"]}}
-        for t in tool_specs(allow_actions, enabled, available_only=True)
+        for t in specs
     ]
     msgs = _format_openai_messages(history, extra, allow_actions, approval)
 
@@ -239,7 +331,7 @@ def run_openai(model_id, history, allow_actions, enabled, extra, approval=False)
             kwargs["tools"] = tools
 
         text, calls, finish = "", {}, None
-        for chunk in client.chat.completions.create(**kwargs):
+        for chunk in _open_stream(client, kwargs):
             if not chunk.choices:
                 continue
             finish = chunk.choices[0].finish_reason or finish
@@ -277,11 +369,11 @@ def run_openai(model_id, history, allow_actions, enabled, extra, approval=False)
                 for c in ordered
             ],
         })
+        results = yield from _run_tools(
+            [(c["id"], c["name"], _parse_args(c["args"])) for c in ordered], allow_actions, enabled, approval
+        )
         for c in ordered:
-            result = yield from _run_tool(
-                c["id"], c["name"], _parse_args(c["args"]), allow_actions, enabled, approval
-            )
-            msgs.append({"role": "tool", "tool_call_id": c["id"], "content": result})
+            msgs.append({"role": "tool", "tool_call_id": c["id"], "content": results[c["id"]]})
         if text:
             yield {"type": "text", "delta": "\n\n"}
 
@@ -292,10 +384,12 @@ def run_openai(model_id, history, allow_actions, enabled, extra, approval=False)
 # Claude (Anthropic Messages API)
 # --------------------------------------------------------------------------
 def run_anthropic(base, model_id, history, allow_actions, enabled, extra, approval=False):
+    history = _prepare_history(history)
     client = _anthropic_client(base)
+    specs = _route_tools(tool_specs(allow_actions, enabled, available_only=True), history)
     tools = [
         {"name": t["name"], "description": t["description"], "input_schema": t["schema"]}
-        for t in tool_specs(allow_actions, enabled, available_only=True)
+        for t in specs
     ]
     msgs = _format_anthropic_messages(history)
     system = system_prompt(extra, allow_actions, approval)
@@ -326,22 +420,21 @@ def run_anthropic(base, model_id, history, allow_actions, enabled, extra, approv
             return
         steps += 1
 
-        assistant_blocks, results, had_text = [], [], False
+        assistant_blocks, had_text, uses = [], False, []
         for b in final.content:
             if b.type == "text":
                 had_text = had_text or bool(b.text)
                 assistant_blocks.append({"type": "text", "text": b.text})
             elif b.type == "tool_use":
                 assistant_blocks.append({"type": "tool_use", "id": b.id, "name": b.name, "input": b.input})
+                uses.append((b.id, b.name, dict(b.input or {})))
         msgs.append({"role": "assistant", "content": assistant_blocks})
 
-        for b in final.content:
-            if b.type == "tool_use":
-                result = yield from _run_tool(
-                    b.id, b.name, dict(b.input or {}), allow_actions, enabled, approval
-                )
-                results.append({"type": "tool_result", "tool_use_id": b.id, "content": result})
-        msgs.append({"role": "user", "content": results})
+        results = yield from _run_tools(uses, allow_actions, enabled, approval)
+        msgs.append({
+            "role": "user",
+            "content": [{"type": "tool_result", "tool_use_id": cid, "content": results[cid]} for cid, _, _ in uses],
+        })
         if had_text:
             yield {"type": "text", "delta": "\n\n"}
 

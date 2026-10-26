@@ -344,7 +344,7 @@ svg{display:block;flex:none}
           <div class="box-row">
             <input type="file" id="fileInput" multiple hidden accept=".txt,.md,.csv,.json,.py,.js,.ts,.html,.css,.sql,.xml,.yaml,.yml,.log,.sh,.env,.pdf,.docx,.xlsx,.png,.jpg,.jpeg,.webp,.gif">
             <button type="button" class="attach-btn" id="attachBtn" title="Lampirkan file atau gambar untuk dianalisis" aria-label="Lampirkan file"></button>
-            <textarea id="input" rows="1" placeholder="Tanyakan sesuatu atau lampirkan file untuk dianalisis oleh ER Agent…" aria-label="Pesan"></textarea>
+            <textarea id="input" rows="1" enterkeyhint="enter" placeholder="Tanyakan sesuatu atau lampirkan file untuk dianalisis oleh ER Agent…" aria-label="Pesan"></textarea>
             <button class="send" id="send" aria-label="Kirim" disabled></button>
           </div>
         </div>
@@ -593,7 +593,8 @@ function enhance(root, live){
     const lang = (code.className.match(/language-([\w+-]+)/) || [])[1] || 'teks';
     // Saat streaming, sintaks mermaid masih setengah jadi: tampilkan sebagai kode, render setelah selesai
     if(lang === 'mermaid' && !live && window.mermaid){ renderMermaid(pre, code.textContent); return; }
-    if(window.hljs){ try{ hljs.highlightElement(code); }catch{} }
+    // Saat streaming, lewati syntax highlight (mahal); dilakukan sekali setelah jawaban selesai
+    if(window.hljs && !live){ try{ hljs.highlightElement(code); }catch{} }
     const box = el('div', 'code'), head = el('div', 'code-h'); head.append(el('span', '', lang));
     const b = el('button'); b.type = 'button'; b.append(ico('copy', 13), document.createTextNode('Salin'));
     b.onclick = () => copyText(code.textContent, b);
@@ -1129,14 +1130,18 @@ function renderTop(){
   if(p){ const s = el('span', 'badge'); s.append(ico('folder', 13), document.createTextNode(p.name)); b.append(s); }
 }
 function renderAll(){ renderSidebar(); renderMessages(); renderTop(); const sc = $('#scroll'); sc.scrollTop = sc.scrollHeight; }
+// Render ulang jawaban yang sedang di-stream dibatasi ~11x/detik (sebelumnya tiap frame = berat untuk jawaban panjang)
+let lastRender = 0;
 function scheduleRender(){
   if(raf || !liveMsg) return;
-  raf = requestAnimationFrame(() => {
-    raf = 0; if(!liveMsg || !liveEl) return;
+  const wait = Math.max(0, 90 - (performance.now() - lastRender));
+  raf = setTimeout(() => {
+    raf = 0; lastRender = performance.now();
+    if(!liveMsg || !liveEl) return;
     const sc = $('#scroll'), near = sc.scrollHeight - sc.scrollTop - sc.clientHeight < 140;
     const row = renderMsg(liveMsg, {live: true}); liveEl.replaceWith(row); liveEl = row;
     if(near) sc.scrollTop = sc.scrollHeight;
-  });
+  }, wait);
 }
 
 /* ------------------------------ kirim & stream ------------------------------ */
@@ -1242,7 +1247,7 @@ async function runAssistant(c){
   }catch(e){ if(e.name !== 'AbortError') bot.error = e.message; }
   finally{
     clearInterval(tick);
-    cancelAnimationFrame(raf); raf = 0; liveMsg = null; liveEl = null; controller = null;
+    clearTimeout(raf); raf = 0; liveMsg = null; liveEl = null; controller = null;
     for(const t of bot.tools) if(t.status === 'running') t.status = 'fail';
     if(!bot.content && !bot.tools.length && !bot.approvals.length && !bot.error) c.messages.pop();
     c.updated = Date.now(); setBusy(false); save(); renderAll();
@@ -1393,7 +1398,13 @@ async function init(){
   $('#search').oninput = e => { state.query = e.target.value; renderSidebar(); };
   $('#send').onclick = () => busy ? controller?.abort() : send();
   $('#input').addEventListener('input', () => { autosize(); updateDynamicPrompts(); });
-  $('#input').addEventListener('keydown', e => { if(e.key === 'Enter' && !e.shiftKey && !e.isComposing){ e.preventDefault(); send(); } });
+  // Desktop: Enter = kirim, Shift+Enter = baris baru. HP/tablet (layar sentuh): Enter = baris baru, kirim lewat tombol.
+  // Ctrl/Cmd+Enter selalu mengirim.
+  const coarse = matchMedia('(pointer: coarse)');
+  $('#input').addEventListener('keydown', e => {
+    if(e.key !== 'Enter' || e.isComposing) return;
+    if(e.ctrlKey || e.metaKey || (!e.shiftKey && !coarse.matches)){ e.preventDefault(); send(); }
+  });
   $('#loginForm').onsubmit = login;
   $('#logout').onclick = async () => { try{ await fetch('/api/logout', {method: 'POST'}); }catch{} showGate(); };
 
