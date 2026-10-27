@@ -186,7 +186,7 @@ myaccount.google.com/permissions, dan permintaan penghapusan data dapat dikirim 
 
 def google_site_verification(code: str):
     """Verifikasi Search Console metode 'HTML file': Google meminta /google<kode>.html berisi teks tertentu."""
-    if not re.fullmatch(r"[0-9a-f]{8,32}", code):
+    if not re.fullmatch(r"[0-9a-zA-Z_-]{8,64}", code):
         abort(404)
     return Response(f"google-site-verification: google{code}.html", mimetype="text/html")
 
