@@ -20,8 +20,10 @@ import db  # noqa: E402
 from providers import MODELS, diagnose, run_chat  # noqa: E402
 from tools import google_status, integrations, tool_specs  # noqa: E402
 from tools_extra import run_due_jobs  # noqa: E402
+import legal  # noqa: E402
 
 app = Flask(__name__)
+legal.register(app)  # /about, /privacy, /google<code>.html
 
 MAX_MESSAGES = 40
 MAX_CHARS = 80_000
