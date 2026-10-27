@@ -881,35 +881,15 @@ def gsheets_append(spreadsheet_id: str, range: str, rows: list):
 #   https://www.googleapis.com/auth/documents
 #   https://www.googleapis.com/auth/drive.file
 # (jalankan ulang google_auth.py dengan scope tambahan, lalu update GOOGLE_REFRESH_TOKEN)
-# Butuh juga: pip install markdown
+# Butuh juga: paket `markdown` di requirements.txt (dipakai docs_html.py)
 _DOCS = "https://docs.googleapis.com/v1/documents"
 # Gambar diagram Mermaid diambil Google dari URL ini saat konversi. Default = layanan publik mermaid.ink
 # (kode diagram dikirim ke pihak ketiga). Untuk data internal, self-host dan isi MERMAID_INK_URL.
 MERMAID_INK = os.getenv("MERMAID_INK_URL", "https://mermaid.ink").rstrip("/")
 
 
-def _md_to_doc_html(md_text: str) -> str:
-    """Markdown -> HTML berinline-style yang dikonversi rapi oleh Drive menjadi Google Docs."""
-    try:
-        import markdown as _markdown
-    except ImportError:
-        raise RuntimeError("Library 'markdown' belum terinstal di server (jalankan: pip install markdown).")
-
-    def mermaid_img(m):
-        b64 = base64.urlsafe_b64encode(m.group(1).strip().encode("utf-8")).decode()
-        return f'\n\n<p><img src="{MERMAID_INK}/img/{b64}" alt="Diagram" width="600"></p>\n\n'
-
-    md_text = re.sub(r"```mermaid[ \t]*\r?\n(.*?)```", mermaid_img, md_text, flags=re.S)
-    body = _markdown.markdown(md_text, extensions=["tables", "fenced_code", "sane_lists", "nl2br"])
-    cell = "border:1px solid #94a3b8;padding:5pt 8pt;"
-    body = body.replace("<table>", '<table border="1" cellpadding="6" style="border-collapse:collapse;width:100%">')
-    body = body.replace("<th>", f'<th style="{cell}background:#e2e8f0;font-weight:bold">')
-    body = re.sub(r"<th align=\"(\w+)\">", lambda m: f'<th align="{m.group(1)}" style="{cell}background:#e2e8f0;font-weight:bold">', body)
-    body = body.replace("<td>", f'<td style="{cell}">')
-    body = re.sub(r"<td align=\"(\w+)\">", lambda m: f'<td align="{m.group(1)}" style="{cell}">', body)
-    body = body.replace("<pre>", '<pre style="font-family:Consolas,monospace;background:#f1f5f9;padding:8pt">')
-    return ('<html><head><meta charset="utf-8"></head>'
-            f'<body style="font-family:Calibri,Arial,sans-serif;font-size:11pt">{body}</body></html>')
+# Konversi Markdown -> HTML untuk Google Docs (tabel, rumus, kode, checklist, diagram) ada di docs_html.py
+from docs_html import md_to_doc_html as _md_to_doc_html  # noqa: E402
 
 
 @tool(
