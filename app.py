@@ -199,6 +199,16 @@ def _security_pre_request():
 def _apply_security_headers(resp):
     if request.path.startswith("/share/raw/"):
         resp.headers["X-Frame-Options"] = "SAMEORIGIN"
+        resp.headers["Content-Security-Policy"] = (
+            "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:; "
+            "script-src * 'unsafe-inline' 'unsafe-eval'; "
+            "style-src * 'unsafe-inline'; "
+            "img-src * data: blob:; "
+            "font-src * data:; "
+            "connect-src *; "
+            "frame-ancestors 'self';"
+        )
+        return resp
     else:
         resp.headers["X-Frame-Options"] = "DENY"
     resp.headers["X-Content-Type-Options"] = "nosniff"

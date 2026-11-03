@@ -4,15 +4,31 @@ import json
 import time
 import uuid
 import secrets
-
-_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-_SHARES_DIR = os.path.join(_BASE_DIR, "data", "shares")
+import tempfile
+import db
 
 _PASSCODE_CHARS = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+_cached_dir: str | None = None
 
 
-def init_store():
-    os.makedirs(_SHARES_DIR, exist_ok=True)
+def _get_shares_dir() -> str:
+    global _cached_dir
+    if _cached_dir:
+        return _cached_dir
+    local_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "shares")
+    try:
+        os.makedirs(local_dir, exist_ok=True)
+        test_file = os.path.join(local_dir, ".test")
+        with open(test_file, "w") as f:
+            f.write("1")
+        os.remove(test_file)
+        _cached_dir = local_dir
+        return local_dir
+    except Exception:
+        tmp_dir = os.path.join(tempfile.gettempdir(), "er_shares")
+        os.makedirs(tmp_dir, exist_ok=True)
+        _cached_dir = tmp_dir
+        return tmp_dir
 
 
 def _slugify(text: str) -> str:
@@ -33,7 +49,6 @@ def create_share(
     project_id: str = "",
     base_url: str = ""
 ) -> dict:
-    init_store()
     share_id = str(uuid.uuid4())
     passcode = generate_passcode(6)
     clean_title = (title or "Halaman Web ER Agent").strip()[:100]
@@ -54,9 +69,20 @@ def create_share(
         "views": 0,
     }
 
-    file_path = os.path.join(_SHARES_DIR, f"{share_id}.json")
-    with open(file_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    if db.enabled():
+        try:
+            db.upsert_share(share_id, passcode, clean_title, data)
+        except Exception:
+            pass
+
+    # Selalu simpan juga di storage lokal/tmp sebagai fallback
+    try:
+        folder = _get_shares_dir()
+        file_path = os.path.join(folder, f"{share_id}.json")
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
 
     query_str = f"project={clean_proj}&chat={clean_chat}&title={slug}&ref=er-agent"
     path = f"/share/html/{share_id}?{query_str}"
@@ -78,14 +104,26 @@ def create_share(
 def get_share(share_id: str) -> dict | None:
     if not re.fullmatch(r"[\w\-]{8,64}", str(share_id or "")):
         return None
-    file_path = os.path.join(_SHARES_DIR, f"{share_id}.json")
-    if not os.path.isfile(file_path):
-        return None
+
+    # Cek database Postgres lebih dulu bila aktif
+    if db.enabled():
+        try:
+            db_res = db.get_share(share_id)
+            if db_res:
+                return db_res
+        except Exception:
+            pass
+
+    # Fallback ke filesystem lokal/tmp
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
-            return json.load(f)
+        folder = _get_shares_dir()
+        file_path = os.path.join(folder, f"{share_id}.json")
+        if os.path.isfile(file_path):
+            with open(file_path, "r", encoding="utf-8") as f:
+                return json.load(f)
     except Exception:
-        return None
+        pass
+    return None
 
 
 def verify_passcode(share_id: str, candidate: str) -> bool:
@@ -99,7 +137,13 @@ def verify_passcode(share_id: str, candidate: str) -> bool:
     if secrets.compare_digest(expected, given):
         try:
             data["views"] = int(data.get("views", 0)) + 1
-            file_path = os.path.join(_SHARES_DIR, f"{share_id}.json")
+            if db.enabled():
+                try:
+                    db.upsert_share(share_id, expected, data.get("title", ""), data)
+                except Exception:
+                    pass
+            folder = _get_shares_dir()
+            file_path = os.path.join(folder, f"{share_id}.json")
             with open(file_path, "w", encoding="utf-8") as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
         except Exception:

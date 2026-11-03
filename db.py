@@ -32,6 +32,10 @@ def _ensure(conn) -> None:
         "id text PRIMARY KEY, data jsonb NOT NULL, updated bigint NOT NULL DEFAULT 0)"
     )
     conn.execute("CREATE TABLE IF NOT EXISTS kv (k text PRIMARY KEY, v jsonb NOT NULL)")
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS shares ("
+        "id text PRIMARY KEY, passcode text NOT NULL, title text, data jsonb NOT NULL, created_at bigint NOT NULL DEFAULT 0)"
+    )
     _ready = True
 
 
@@ -72,3 +76,22 @@ def set_projects(projects: list) -> None:
             "ON CONFLICT (k) DO UPDATE SET v = EXCLUDED.v",
             (Jsonb(projects),),
         )
+
+
+def upsert_share(share_id: str, passcode: str, title: str, data: dict) -> None:
+    from psycopg.types.json import Jsonb
+
+    with _connect() as conn:
+        _ensure(conn)
+        conn.execute(
+            "INSERT INTO shares (id, passcode, title, data, created_at) VALUES (%s, %s, %s, %s, %s) "
+            "ON CONFLICT (id) DO UPDATE SET passcode = EXCLUDED.passcode, title = EXCLUDED.title, data = EXCLUDED.data",
+            (share_id, passcode, title, Jsonb(data), int(data.get("created_at") or 0)),
+        )
+
+
+def get_share(share_id: str) -> dict | None:
+    with _connect() as conn:
+        _ensure(conn)
+        row = conn.execute("SELECT data FROM shares WHERE id = %s", (share_id,)).fetchone()
+        return row[0] if row else None

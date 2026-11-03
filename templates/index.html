@@ -65,23 +65,18 @@ svg{display:block;flex:none}
 .ico-btn{display:grid;place-items:center;width:34px;height:34px;border:0;background:none;border-radius:9px;color:var(--muted);transition:all .15s}
 .ico-btn:hover{background:var(--hover);color:var(--ink)}
 
-/* App Layout & Smooth Collapsible Sidebar */
+/* App Layout & Smooth Collapsible Sidebar (Claude / ChatGPT style) */
 .app{display:flex;height:100%;overflow:hidden;width:100%}
 .side{background:var(--side);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;
-  width:280px;flex:none;overflow:hidden;transition:width .22s cubic-bezier(.2,.8,.2,1);z-index:20;position:relative}
-.app.collapsed .side{width:56px}
+  width:260px;flex:none;overflow:hidden;transition:width .22s cubic-bezier(.2,.8,.2,1),opacity .18s ease;z-index:20;position:relative}
+.app.collapsed .side{width:0;min-width:0;border-right:0;opacity:0;pointer-events:none}
 
 .brand{display:flex;align-items:center;justify-content:space-between;padding:14px 12px 10px;height:54px;border-bottom:1px solid transparent}
 .brand-left{display:flex;align-items:center;gap:10px;overflow:hidden}
-.brand-text{font-weight:700;font-size:16px;letter-spacing:-.015em;white-space:nowrap;color:var(--ink);transition:opacity .15s}
-.app.collapsed .brand-left{display:none}
-.app.collapsed .brand{justify-content:center;padding:10px 0}
-.app.collapsed .side-top-inner{opacity:0;pointer-events:none;display:none}
-.app.collapsed .rail-icons{display:flex}
+.brand-text{font-weight:700;font-size:16px;letter-spacing:-.015em;white-space:nowrap;color:var(--ink)}
 
-.rail-icons{display:none;flex-direction:column;align-items:center;gap:10px;padding:10px 0}
-.rail-btn{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;border:1px solid var(--line);background:var(--surface);color:var(--muted);transition:all .15s}
-.rail-btn:hover{color:var(--ink);border-color:var(--accent);background:var(--accent-soft)}
+#topSidebarBtn{display:none}
+.app.collapsed #topSidebarBtn{display:grid}
 
 .side-top{padding:8px 10px;display:grid;gap:8px}
 .btn-new{display:flex;align-items:center;gap:9px;padding:9px 12px;border:1px solid var(--line);background:var(--surface);
@@ -114,7 +109,6 @@ svg{display:block;flex:none}
 .side-foot{padding:8px 10px;border-top:1px solid var(--line);display:flex;gap:4px;align-items:center}
 .side-foot .grow{flex:1;display:flex;align-items:center;gap:8px;border:0;background:none;padding:7px 9px;border-radius:9px;color:var(--muted);text-align:left;font-size:13.5px;font-weight:500;white-space:nowrap}
 .side-foot .grow:hover{background:var(--hover);color:var(--ink)}
-.app.collapsed .side-foot .grow span{display:none}
 
 /* Main Workspace */
 .main{display:flex;flex-direction:column;min-width:0;min-height:0;flex:1;position:relative;overflow:hidden}
@@ -332,13 +326,23 @@ svg{display:block;flex:none}
 .backdrop{display:none}
 
 @media (max-width:820px){
-  .app.collapsed .side{width:0;display:none}
-  .side{position:fixed;inset:0 auto 0 0;width:290px;max-width:84vw;transform:translateX(-100%);transition:transform .22s;z-index:30;box-shadow:var(--shadow-lg)}
+  #topSidebarBtn{display:grid!important}
+  .app.collapsed .side{width:280px;display:flex;opacity:1;pointer-events:auto}
+  .side{position:fixed;inset:0 auto 0 0;width:280px;max-width:84vw;transform:translateX(-100%);transition:transform .22s cubic-bezier(.2,.8,.2,1);z-index:30;box-shadow:var(--shadow-lg)}
   .side.open{transform:none}
   .backdrop.show{display:block;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:25}
 }
 .logo{width:24px;height:24px;object-fit:contain;border-radius:6px}
 .bot-avatar{width:26px;height:26px;flex:none;margin-top:3px;border-radius:50%;border:1px solid var(--line);background:#fff;padding:3px;object-fit:contain}
+
+/* Share Link Card in Chat */
+.share-link-card{margin:12px 0;padding:12px 16px;background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:12px;display:flex;flex-direction:column;gap:8px;box-shadow:var(--shadow)}
+.share-card-header{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.share-card-title{font-weight:700;font-size:13.5px;color:var(--ink);display:flex;align-items:center;gap:7px}
+.share-card-body{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;padding-top:6px;border-top:1px dashed var(--line)}
+.share-card-pass-wrap{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted)}
+.share-card-code{font-family:var(--mono);font-weight:700;font-size:13.5px;letter-spacing:1.5px;background:var(--accent-soft);color:var(--accent);padding:2px 7px;border-radius:6px;border:1px solid color-mix(in srgb, var(--accent) 30%, transparent)}
+.share-card-actions{display:flex;align-items:center;gap:8px}
 </style>
 </head>
 <body>
@@ -349,18 +353,10 @@ svg{display:block;flex:none}
         <img class="logo" src="/bird.png" alt="">
         <span class="brand-text" id="brandText">ER Agent</span>
       </div>
-      <button class="ico-btn" id="collapseSideBtn" title="Sembunyikan sidebar (Ctrl+B)" aria-label="Sembunyikan sidebar"></button>
+      <button class="ico-btn" id="collapseSideBtn" title="Tutup sidebar (Ctrl+B)" aria-label="Tutup sidebar"></button>
     </div>
 
-    <!-- Mode Ciut: Icon Rail Vertikal -->
-    <div class="rail-icons" id="railIcons">
-      <button class="rail-btn" id="railNewChat" title="Obrolan baru (Ctrl+Shift+O)"></button>
-      <button class="rail-btn" id="railSearch" title="Cari obrolan"></button>
-      <button class="rail-btn" id="railSettings" title="Pengaturan pribadi"></button>
-    </div>
-
-    <!-- Mode Lebar: Normal Sidebar -->
-    <div class="side-top side-top-inner">
+    <div class="side-top">
       <button class="btn-new" id="newChat"></button>
       <label class="search" id="searchBox"><input id="search" placeholder="Cari percakapan…" aria-label="Cari obrolan"></label>
     </div>
@@ -374,7 +370,7 @@ svg{display:block;flex:none}
 
   <main class="main">
     <div class="top">
-      <button class="ico-btn mobile-only" id="mobileMenuBtn" aria-label="Buka menu" title="Buka menu"></button>
+      <button class="ico-btn" id="topSidebarBtn" aria-label="Buka sidebar" title="Buka sidebar (Ctrl+B)"></button>
       <span class="model-badge" id="topModelLabel"></span>
       <span id="projBadge"></span>
       <span class="spacer"></span>
@@ -458,6 +454,8 @@ const ICONS = {
   up:'<path d="M12 19V5M5 12l7-7 7 7"/>',
   stop:'<rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/>',
   sidebar:'<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 3v18"/>',
+  panelClose:'<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 3v18M14 9l-3 3 3 3"/>',
+  panelOpen:'<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 3v18M11 9l3 3-3 3"/>',
   collapse:'<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 3v18M15 9l-3 3 3 3"/>',
   chevLeft:'<path d="M15 18l-6-6 6-6"/>',
   chevRight:'<path d="M9 18l6-6-6-6"/>',
@@ -626,18 +624,19 @@ function applySidebarState(){
   const app = $('#appRoot');
   const isCollapsed = !!state.settings.sidebarCollapsed;
   app.classList.toggle('collapsed', isCollapsed);
-  const btn = $('#collapseSideBtn');
-  if(btn){
-    btn.replaceChildren();
-    if(isCollapsed){
-      btn.append(ico('chevRight', 18));
-      btn.title = 'Buka sidebar (Ctrl+B)';
-      btn.setAttribute('aria-label', 'Buka sidebar');
-    } else {
-      btn.append(ico('chevLeft', 18));
-      btn.title = 'Sembunyikan sidebar (Ctrl+B)';
-      btn.setAttribute('aria-label', 'Sembunyikan sidebar');
-    }
+  
+  const sideBtn = $('#collapseSideBtn');
+  if(sideBtn){
+    sideBtn.replaceChildren(ico('panelClose', 18));
+    sideBtn.title = 'Tutup sidebar (Ctrl+B)';
+    sideBtn.setAttribute('aria-label', 'Tutup sidebar');
+  }
+  
+  const topBtn = $('#topSidebarBtn');
+  if(topBtn){
+    topBtn.replaceChildren(ico('panelOpen', 18));
+    topBtn.title = 'Buka sidebar (Ctrl+B)';
+    topBtn.setAttribute('aria-label', 'Buka sidebar');
   }
 }
 
@@ -699,7 +698,12 @@ function extractMath(t, bag){
 function renderMarkdown(src){
   const bag = [];
   const parts = src.split(/(```[\s\S]*?(?:```|$)|`[^`\n]*`)/g);
-  const prepared = parts.map((p, i) => i % 2 ? p : extractMath(p, bag)).join('');
+  const prepared = parts.map((p, i) => {
+    if(i % 2) return p;
+    let text = extractMath(p, bag);
+    // Auto-linkify relative share links (/share/html/...) so marked renders an anchor tag
+    return text.replace(/(^|[\s(>])(\/share\/html\/[a-zA-Z0-9_\-?&=%#]+)/g, '$1[$2]($2)');
+  }).join('');
   let html = DOMPurify.sanitize(marked.parse(prepared, {gfm: true, breaks: true}));
   return html.replace(/%%MATH(\d+)%%/g, (_, i) => bag[+i] ?? '');
 }
@@ -825,6 +829,60 @@ function enhance(root, live){
   });
 
   root.querySelectorAll('a').forEach(a => { a.target = '_blank'; a.rel = 'noopener noreferrer'; });
+
+  // Deteksi tautan /share/html/... dan buatkan Kartu Tautan Interaktif
+  root.querySelectorAll('a[href*="/share/html/"]').forEach(a => {
+    const parentMsg = a.closest('.msg.bot');
+    if(!parentMsg || parentMsg.querySelector('.share-link-card')) return;
+    
+    const href = a.getAttribute('href');
+    const msgText = parentMsg.textContent || '';
+    const passMatch = msgText.match(/(?:passcode|kode(?:\s*akses)?)\s*[:=]\s*([A-Za-z0-9]{4,10})/i);
+    const passcode = passMatch ? passMatch[1].toUpperCase() : '';
+    const idMatch = href.match(/\/share\/html\/([a-zA-Z0-9\-]+)/);
+    const shareId = idMatch ? idMatch[1] : '';
+
+    const card = el('div', 'share-link-card');
+    const head = el('div', 'share-card-header');
+    const titleBox = el('div', 'share-card-title');
+    titleBox.append(ico('globe', 16), el('span', '', 'Halaman Web Terproteksi'));
+    head.append(titleBox);
+
+    const body = el('div', 'share-card-body');
+    const passWrap = el('div', 'share-card-pass-wrap');
+    if(passcode){
+      passWrap.append(el('span', '', 'Passcode:'));
+      const codeSpan = el('code', 'share-card-code', passcode);
+      const cpPass = el('button', 'tbl-btn', 'Salin Kode');
+      cpPass.type = 'button';
+      cpPass.prepend(ico('copy', 12));
+      cpPass.onclick = () => copyText(passcode, cpPass);
+      passWrap.append(codeSpan, cpPass);
+    } else {
+      passWrap.append(el('span', '', 'Tautan Dilindungi Kode Akses'));
+    }
+    
+    const actions = el('div', 'share-card-actions');
+    const openBtn = el('a', 'btn primary', 'Buka Halaman');
+    openBtn.href = href;
+    openBtn.target = '_blank';
+    openBtn.rel = 'noopener noreferrer';
+    openBtn.style.textDecoration = 'none';
+    openBtn.prepend(ico('external', 13));
+    
+    if(shareId && passcode){
+      openBtn.onclick = () => {
+        try{ sessionStorage.setItem('share_pass_' + shareId, passcode); }catch{}
+      };
+    }
+    
+    actions.append(openBtn);
+    body.append(passWrap, actions);
+    card.append(head, body);
+    
+    const p = a.closest('p') || a;
+    p.insertAdjacentElement('afterend', card);
+  });
 }
 
 let mmSeq = 0;
@@ -1943,18 +2001,14 @@ async function login(e){
 
 /* ---------------------- Inisialisasi ---------------------- */
 async function init(){
-  const mobBtn = $('#mobileMenuBtn');
-  if(mobBtn){ mobBtn.append(ico('sidebar', 18)); mobBtn.onclick = toggleSidebar; }
+  const topSideBtn = $('#topSidebarBtn');
+  if(topSideBtn){ topSideBtn.append(ico('panelOpen', 18)); topSideBtn.onclick = toggleSidebar; }
 
   $('#attachBtn').append(ico('paperclip', 17));
   $('#newChat').append(ico('plus', 15), document.createTextNode('Percakapan baru'));
   $('#searchBox').prepend(ico('search', 14));
   $('#openSettings').append(ico('sliders', 15), el('span', '', 'Pengaturan'));
   $('#logout').append(ico('logout', 16));
-
-  $('#railNewChat').append(ico('plus', 16));
-  $('#railSearch').append(ico('search', 16));
-  $('#railSettings').append(ico('sliders', 16));
 
   setBusy(false); applyTheme(); applySidebarState();
 
@@ -1978,9 +2032,7 @@ async function init(){
     $('#topModelLabel').textContent = sel.options[sel.selectedIndex]?.text || '';
   };
   $('#newChat').onclick = () => newChat();
-  $('#railNewChat').onclick = () => newChat();
   $('#openSettings').onclick = openPersonalSettings;
-  $('#railSettings').onclick = openPersonalSettings;
 
   $('#themeBtn').onclick = () => {
     state.settings.theme = isDark() ? 'light' : 'dark';
@@ -1988,9 +2040,6 @@ async function init(){
   };
   $('#collapseSideBtn').onclick = toggleSidebar;
   $('#backdrop').onclick = closeSide;
-  $('#railSearch').onclick = () => {
-    state.settings.sidebarCollapsed = false; save(); applySidebarState(); $('#search').focus();
-  };
 
   $('#deepToggle').onclick = () => {
     state.deep = !state.deep;
