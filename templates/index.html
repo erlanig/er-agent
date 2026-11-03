@@ -74,7 +74,8 @@ svg{display:block;flex:none}
 .brand{display:flex;align-items:center;justify-content:space-between;padding:14px 12px 10px;height:54px;border-bottom:1px solid transparent}
 .brand-left{display:flex;align-items:center;gap:10px;overflow:hidden}
 .brand-text{font-weight:700;font-size:16px;letter-spacing:-.015em;white-space:nowrap;color:var(--ink);transition:opacity .15s}
-.app.collapsed .brand-text{opacity:0;pointer-events:none}
+.app.collapsed .brand-left{display:none}
+.app.collapsed .brand{justify-content:center;padding:10px 0}
 .app.collapsed .side-top-inner{opacity:0;pointer-events:none;display:none}
 .app.collapsed .rail-icons{display:flex}
 
@@ -143,7 +144,12 @@ svg{display:block;flex:none}
 .msg{margin:20px 0;display:flex;gap:12px}
 .msg.user{justify-content:flex-end}
 .msg.user .user-wrap{max-width:85%;display:flex;flex-direction:column;align-items:flex-end;gap:6px}
-.msg.user .body{background:var(--user);border:1px solid color-mix(in srgb,var(--accent) 30%,transparent);color:var(--ink);padding:10px 14px;border-radius:16px 16px 4px 16px;white-space:pre-wrap;word-break:break-word}
+.msg.user .body{background:var(--user);border:1px solid color-mix(in srgb,var(--accent) 30%,transparent);color:var(--ink);padding:10px 14px;border-radius:16px 16px 4px 16px;word-break:break-word;line-height:1.6}
+.msg.user .body p{margin:.4em 0}
+.msg.user .body p:first-child{margin-top:0}
+.msg.user .body p:last-child{margin-bottom:0}
+.mobile-only{display:none}
+@media (max-width:820px){.mobile-only{display:grid}}
 
 .msg.bot{justify-content:flex-start}
 .bot-main{flex:1;min-width:0}
@@ -333,7 +339,6 @@ svg{display:block;flex:none}
       <button class="rail-btn" id="railNewChat" title="Obrolan baru (Ctrl+Shift+O)"></button>
       <button class="rail-btn" id="railSearch" title="Cari obrolan"></button>
       <button class="rail-btn" id="railSettings" title="Pengaturan pribadi"></button>
-      <button class="rail-btn" id="railAdmin" title="Halaman Admin"></button>
     </div>
 
     <!-- Mode Lebar: Normal Sidebar -->
@@ -344,7 +349,6 @@ svg{display:block;flex:none}
     <div class="list" id="list"></div>
     <div class="side-foot">
       <button class="grow" id="openSettings" title="Pengaturan Pribadi"></button>
-      <button class="ico-btn" id="openAdminSide" title="Panel Admin (Perlu Passcode)" aria-label="Admin"></button>
       <button class="ico-btn" id="logout" title="Keluar" aria-label="Keluar"></button>
     </div>
   </aside>
@@ -352,7 +356,7 @@ svg{display:block;flex:none}
 
   <main class="main">
     <div class="top">
-      <button class="ico-btn" id="toggleSideBtn" title="Toggle Sidebar (Ctrl+B)" aria-label="Toggle Sidebar"></button>
+      <button class="ico-btn mobile-only" id="mobileMenuBtn" aria-label="Buka menu" title="Buka menu"></button>
       <span class="model-badge" id="topModelLabel"></span>
       <span id="projBadge"></span>
       <span class="spacer"></span>
@@ -437,6 +441,8 @@ const ICONS = {
   stop:'<rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/>',
   sidebar:'<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 3v18"/>',
   collapse:'<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 3v18M15 9l-3 3 3 3"/>',
+  chevLeft:'<path d="M15 18l-6-6 6-6"/>',
+  chevRight:'<path d="M9 18l6-6-6-6"/>',
   paperclip:'<path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
   x:'<path d="M6 6l12 12M18 6L6 18"/>',
   search:'<circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/>',
@@ -598,7 +604,21 @@ async function pushSync(){
 /* ------------------------------ Sidebar Toggling ------------------------------ */
 function applySidebarState(){
   const app = $('#appRoot');
-  app.classList.toggle('collapsed', !!state.settings.sidebarCollapsed);
+  const isCollapsed = !!state.settings.sidebarCollapsed;
+  app.classList.toggle('collapsed', isCollapsed);
+  const btn = $('#collapseSideBtn');
+  if(btn){
+    btn.replaceChildren();
+    if(isCollapsed){
+      btn.append(ico('chevRight', 18));
+      btn.title = 'Buka sidebar (Ctrl+B)';
+      btn.setAttribute('aria-label', 'Buka sidebar');
+    } else {
+      btn.append(ico('chevLeft', 18));
+      btn.title = 'Sembunyikan sidebar (Ctrl+B)';
+      btn.setAttribute('aria-label', 'Sembunyikan sidebar');
+    }
+  }
 }
 
 function toggleSidebar(){
@@ -991,10 +1011,99 @@ function chatMenu(anchor, c){
           c.title = val; save(); renderSidebar();
         }
       });
-    }},
+    }}
+  ];
+
+  if(state.projects && state.projects.length){
+    items.push('-');
+    if(c.projectId){
+      items.push({label: 'Keluarkan dari proyek', icon: 'folder', onClick: () => {
+        c.projectId = null; save(); renderSidebar();
+      }});
+    }
+    state.projects.forEach(p => {
+      if(c.projectId !== p.id){
+        items.push({label: `Pindahkan ke "${p.name}"`, icon: 'folder', onClick: () => {
+          c.projectId = p.id; p.open = true; save(); renderSidebar();
+        }});
+      }
+    });
+  }
+
+  items.push('-');
+  items.push({label: 'Hapus obrolan', icon: 'trash', danger: true, onClick: () => {
+    if(confirm(`Hapus obrolan "${c.title}"?`)) deleteChat(c.id);
+  }});
+  openContextMenu(anchor, items);
+}
+
+function projectDialog(p){
+  const isEdit = !!p;
+  openDialog({
+    title: isEdit ? 'Edit Proyek' : 'Proyek Baru',
+    body: (() => {
+      const wrap = el('div');
+      wrap.style.display = 'grid';
+      wrap.style.gap = '12px';
+      
+      const l1 = el('label', 'field');
+      l1.append(el('span', '', 'Nama Proyek'));
+      const inp1 = el('input');
+      inp1.id = 'projNameInp';
+      inp1.placeholder = 'Mis. Riset Keuangan & Pasar';
+      if(p) inp1.value = p.name || '';
+      l1.append(inp1);
+      wrap.append(l1);
+
+      const l2 = el('label', 'field');
+      l2.append(el('span', '', 'Instruksi Kustom Proyek (Opsional)'));
+      const ta = el('textarea');
+      ta.id = 'projPromptInp';
+      ta.rows = 4;
+      ta.placeholder = 'Instruksi atau konteks yang selalu aktif di semua obrolan proyek ini...';
+      if(p) ta.value = p.prompt || '';
+      l2.append(ta);
+      wrap.append(l2);
+
+      return wrap;
+    })(),
+    submit: isEdit ? 'Simpan' : 'Buat Proyek',
+    onSubmit: () => {
+      const name = $('#projNameInp').value.trim();
+      if(!name) return false;
+      const prompt = $('#projPromptInp').value.trim();
+      if(isEdit){
+        p.name = name;
+        p.prompt = prompt;
+      } else {
+        if(!state.projects) state.projects = [];
+        const newP = {
+          id: uid(),
+          name: name,
+          prompt: prompt,
+          open: true,
+          created: Date.now()
+        };
+        state.projects.unshift(newP);
+      }
+      save();
+      renderSidebar();
+    }
+  });
+}
+
+function projectMenu(anchor, p){
+  const items = [
+    {label: 'Tambah obrolan baru', icon: 'plus', onClick: () => { newChat(p.id); closeSide(); }},
+    {label: 'Edit proyek & instruksi', icon: 'edit', onClick: () => projectDialog(p)},
     '-',
-    {label: 'Hapus obrolan', icon: 'trash', danger: true, onClick: () => {
-      if(confirm(`Hapus obrolan "${c.title}"?`)) deleteChat(c.id);
+    {label: 'Hapus proyek', icon: 'trash', danger: true, onClick: () => {
+      if(confirm(`Hapus proyek "${p.name}"? Obrolan di dalamnya akan dipindahkan ke daftar umum.`)){
+        state.chats.forEach(c => { if(c.projectId === p.id) c.projectId = null; });
+        state.projects = state.projects.filter(x => x.id !== p.id);
+        save();
+        renderSidebar();
+      }
     }}
   ];
   openContextMenu(anchor, items);
@@ -1025,19 +1134,67 @@ function renderSidebar(){
   const match = c => !q || c.title.toLowerCase().includes(q);
   const sorted = [...state.chats].sort((a, b) => (b.updated || 0) - (a.updated || 0));
 
-  const pinned = sorted.filter(c => c.pinned && match(c));
+  // 1. Proyek
+  if(!q){
+    box.append(secHead('Proyek', iconBtn('plus', 'Proyek baru', () => projectDialog(null), 14)));
+    if(!state.projects || !state.projects.length){
+      box.append(el('div', 'hint-s', 'Belum ada proyek. Klik + untuk membuat.'));
+    } else {
+      for(const p of state.projects){
+        const projChats = sorted.filter(c => c.projectId === p.id);
+        const pRow = el('div', 'item');
+        pRow.tabIndex = 0;
+        const icon = ico('folder', 14);
+        pRow.append(icon);
+        const nameSpan = el('span', 't', p.name);
+        pRow.append(nameSpan);
+        if(projChats.length){
+          pRow.append(el('span', 'cnt', String(projChats.length)));
+        }
+        const acts = el('span', 'acts');
+        acts.append(iconBtn('plus', 'Obrolan baru di proyek', () => { newChat(p.id); closeSide(); }, 14));
+        acts.append(iconBtn('more', 'Opsi proyek', (e, b) => projectMenu(b, p), 14));
+        pRow.append(acts);
+
+        pRow.onclick = () => {
+          p.open = !p.open;
+          save();
+          renderSidebar();
+        };
+        box.append(pRow);
+
+        if(p.open){
+          if(projChats.length === 0){
+            const emptyHint = el('div', 'hint-s', '(Belum ada obrolan)');
+            emptyHint.style.paddingLeft = '24px';
+            box.append(emptyHint);
+          } else {
+            for(const c of projChats){
+              const cRow = chatRow(c);
+              cRow.classList.add('indent');
+              box.append(cRow);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 2. Disematkan (hanya obrolan non-proyek jika tidak sedang mencari)
+  const pinned = sorted.filter(c => c.pinned && match(c) && (q || !c.projectId));
   if(pinned.length){
     box.append(secHead('Disematkan'));
     pinned.forEach(c => box.append(chatRow(c)));
   }
 
-  // Pengelompokan Tanggal
+  // 3. Pengelompokan Tanggal (hanya obrolan non-proyek jika tidak sedang mencari)
+  const unfiled = sorted.filter(c => !c.pinned && match(c) && (q || !c.projectId));
   const now = Date.now(), dayMs = 86400000;
   const groups = {
-    'Hari ini': sorted.filter(c => !c.pinned && match(c) && (now - (c.updated || 0)) < dayMs),
-    'Kemarin': sorted.filter(c => !c.pinned && match(c) && (now - (c.updated || 0)) >= dayMs && (now - (c.updated || 0)) < 2 * dayMs),
-    '7 Hari Terakhir': sorted.filter(c => !c.pinned && match(c) && (now - (c.updated || 0)) >= 2 * dayMs && (now - (c.updated || 0)) < 7 * dayMs),
-    'Lebih Lama': sorted.filter(c => !c.pinned && match(c) && (now - (c.updated || 0)) >= 7 * dayMs)
+    'Hari ini': unfiled.filter(c => (now - (c.updated || 0)) < dayMs),
+    'Kemarin': unfiled.filter(c => (now - (c.updated || 0)) >= dayMs && (now - (c.updated || 0)) < 2 * dayMs),
+    '7 Hari Terakhir': unfiled.filter(c => (now - (c.updated || 0)) >= 2 * dayMs && (now - (c.updated || 0)) < 7 * dayMs),
+    'Lebih Lama': unfiled.filter(c => (now - (c.updated || 0)) >= 7 * dayMs)
   };
 
   for(const [label, list] of Object.entries(groups)){
@@ -1048,7 +1205,12 @@ function renderSidebar(){
   }
 }
 
-function secHead(title){ const d = el('div', 'sec'); d.append(el('span', '', title)); return d; }
+function secHead(title, rightEl){
+  const d = el('div', 'sec');
+  d.append(el('span', '', title));
+  if(rightEl) d.append(rightEl);
+  return d;
+}
 function chatRow(c){
   const row = el('div', 'item' + (c.id === state.activeId ? ' active' : ''));
   row.tabIndex = 0;
@@ -1126,7 +1288,11 @@ function renderMsg(m, opts = {}){
       }
       wrap.append(fbox);
     }
-    wrap.append(el('div', 'body', m.displayContent || m.content));
+    const uBody = el('div', 'body');
+    const uText = m.displayContent || m.content || '';
+    uBody.innerHTML = renderMarkdown(uText);
+    enhance(uBody, false);
+    wrap.append(uBody);
     row.append(wrap);
     return row;
   }
@@ -1243,6 +1409,19 @@ function renderTop(){
   const c = active(), sel = $('#modelPicker');
   if(c && c.model) sel.value = c.model;
   $('#topModelLabel').textContent = sel.options[sel.selectedIndex]?.text || '';
+
+  const pb = $('#projBadge');
+  if(pb){
+    pb.replaceChildren();
+    if(c && c.projectId){
+      const p = project(c.projectId);
+      if(p){
+        const badge = el('span', 'badge', p.name);
+        badge.title = 'Proyek: ' + p.name;
+        pb.append(badge);
+      }
+    }
+  }
 }
 
 function renderAll(){
@@ -1337,6 +1516,14 @@ async function runAssistant(c){
   controller = new AbortController();
   liveStatusText = "Menganalisis permintaan…";
 
+  let instr = state.settings.instructions || '';
+  if(c.projectId){
+    const p = project(c.projectId);
+    if(p && p.prompt){
+      instr = instr ? `${instr}\n\n[Instruksi Proyek ${p.name}]:\n${p.prompt}` : `[Instruksi Proyek ${p.name}]:\n${p.prompt}`;
+    }
+  }
+
   try{
     const res = await api('/api/chat', {
       method: 'POST',
@@ -1344,7 +1531,7 @@ async function runAssistant(c){
       body: JSON.stringify({
         model: c.model || $('#modelPicker').value,
         messages: history,
-        instructions: state.settings.instructions,
+        instructions: instr,
         about: state.settings.about,
         style: state.settings.style,
         language: state.settings.language,
@@ -1463,16 +1650,6 @@ function openPersonalSettings(){
   selCopy.onchange = () => { s.copyFont = selCopy.value; save(); };
   fCopy.append(selCopy); b.append(fCopy);
 
-  b.append(el('h3', '', 'Pengaturan Admin & Sistem'));
-  const adminRow = el('div', 'row');
-  const adminTxt = el('div', 'txt');
-  adminTxt.append(el('div', 'ttl', 'Halaman Admin Pusat'), el('div', 'dsc', 'Konfigurasi model, API keys, batas sistem, dan passcode admin (default Tekna@12).'));
-  const adminBtn = el('a', 'btn admin-link', 'Buka Panel Admin');
-  adminBtn.href = '/admin';
-  adminBtn.target = '_blank';
-  adminRow.append(adminTxt, adminBtn);
-  b.append(adminRow);
-
   b.append(el('h3', '', 'Manajemen Riwayat'));
   const histRow = el('div', 'btns'); histRow.style.justifyContent = 'flex-start';
   const btnExp = el('button', 'btn', 'Ekspor JSON');
@@ -1518,19 +1695,18 @@ async function login(e){
 
 /* ---------------------- Inisialisasi ---------------------- */
 async function init(){
-  $('#collapseSideBtn').append(ico('collapse', 17));
-  $('#toggleSideBtn').append(ico('sidebar', 18));
+  const mobBtn = $('#mobileMenuBtn');
+  if(mobBtn){ mobBtn.append(ico('sidebar', 18)); mobBtn.onclick = toggleSidebar; }
+
   $('#attachBtn').append(ico('paperclip', 17));
   $('#newChat').append(ico('plus', 15), document.createTextNode('Percakapan baru'));
   $('#searchBox').prepend(ico('search', 14));
   $('#openSettings').append(ico('sliders', 15), el('span', '', 'Pengaturan'));
-  $('#openAdminSide').append(ico('shield', 16));
   $('#logout').append(ico('logout', 16));
 
   $('#railNewChat').append(ico('plus', 16));
   $('#railSearch').append(ico('search', 16));
   $('#railSettings').append(ico('sliders', 16));
-  $('#railAdmin').append(ico('shield', 16));
 
   setBusy(false); applyTheme(); applySidebarState();
 
@@ -1557,14 +1733,11 @@ async function init(){
   $('#railNewChat').onclick = () => newChat();
   $('#openSettings').onclick = openPersonalSettings;
   $('#railSettings').onclick = openPersonalSettings;
-  $('#openAdminSide').onclick = () => window.open('/admin', '_blank');
-  $('#railAdmin').onclick = () => window.open('/admin', '_blank');
 
   $('#themeBtn').onclick = () => {
     state.settings.theme = isDark() ? 'light' : 'dark';
     save(); applyTheme();
   };
-  $('#toggleSideBtn').onclick = toggleSidebar;
   $('#collapseSideBtn').onclick = toggleSidebar;
   $('#backdrop').onclick = closeSide;
   $('#railSearch').onclick = () => {

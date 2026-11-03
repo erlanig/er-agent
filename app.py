@@ -329,6 +329,21 @@ def health():
     return jsonify(ok=True)
 
 
+@app.get("/api/download/<file_id>")
+def download_generated_file(file_id: str):
+    state = _auth_state()
+    if state != "ok":
+        return _auth_error(state)
+    if not re.fullmatch(r"[\w.\-]+", file_id):
+        abort(400)
+    folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), "generated_files")
+    filepath = os.path.join(folder, file_id)
+    if not os.path.isfile(filepath):
+        abort(404)
+    dl_name = file_id.split("_", 2)[-1] if "_" in file_id else file_id
+    return send_from_directory(folder, file_id, as_attachment=True, download_name=dl_name)
+
+
 @app.get("/api/config")
 def config():
     s_cfg = settings_store.get_settings()

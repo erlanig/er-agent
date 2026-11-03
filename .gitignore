@@ -7,4 +7,5 @@ __pycache__/
 .vercel/
 .DS_Store
 data/
+generated_files/
 *.tmp

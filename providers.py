@@ -88,6 +88,7 @@ _ROUTES = {
     "GitHub": r"github|repo|workflow|ci/?cd|issue|pull request|\bpr\b|commit|deploy|actions",
     "Telegram": r"telegram|ingatkan|pengingat|reminder",
     "Penjadwalan": r"jadwal|schedule|ingat|remind|nanti|pukul|\bjam\b|terjadwal|batalkan|cron",
+    "Dokumen & Berkas": r"doc|docx|word|excel|xlsx|spreadsheet|pdf|ppt|pptx|powerpoint|slide|presentasi|berkas|laporan|unduh|download",
 }
 
 
@@ -136,6 +137,8 @@ _ANTI_SLOP_GUIDELINES = (
     "Beri tag bahasa di blok kode (```python, ```typescript, ```sql, dll). Cantumkan pertimbangan kompleksitas waktu/ruang dan edge-cases bila relevan.\n"
     "5. MATEMATIKA & FORMULA: Tulis rumus menggunakan KaTeX ($...$ inline, $$...$$ display blok).\n"
     "6. DIAGRAM: Gunakan blok ```mermaid untuk alur arsitektur, sequence diagram, atau entity-relationship.\n"
+    "7. BEBAS EMOJI (STRICT): DILARANG KERAS menggunakan emoji dalam jawaban apa pun (termasuk salam, heading, poin, penutup, atau kode), KECUALI jika pengguna secara eksplisit memintanya dalam pertanyaannya. Jawaban harus bersih, elegan, dan profesional layaknya laporan teknik atau paper sains.\n"
+    "8. PEMBUATAN DOKUMEN & BERKAS: Bila pengguna meminta dibuatkan dokumen Word (.docx), spreadsheet Excel (.xlsx), PDF (.pdf), atau presentasi PowerPoint (.pptx), panggil tool yang sesuai: create_word_docx, create_excel_xlsx, create_pdf_doc, atau create_powerpoint_pptx. Tool akan otomatis menghasilkan berkas dan tautan unduhan langsung untuk pengguna.\n"
 )
 
 

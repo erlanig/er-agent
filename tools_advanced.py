@@ -611,3 +611,382 @@ def code_diff_analyzer(original_code: str, modified_code: str, filename: str = "
         "pengurangan_baris": deletions,
         "diff_patch": diff_text if diff_text else "(Tidak ada perbedaan antara kedua kode.)"
     }
+
+
+# --------------------------------------------------------------------------
+# 5. PEMBUATAN DOKUMEN & BERKAS (DOCS, EXCEL, PDF, PPT)
+# --------------------------------------------------------------------------
+_GEN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "generated_files")
+
+def _prepare_gen_file(filename: str) -> tuple[str, str, str]:
+    os.makedirs(_GEN_DIR, exist_ok=True)
+    clean_name = re.sub(r"[^\w.\-]+", "_", filename).strip("_") or "dokumen"
+    fid = f"{int(time.time())}_{secrets.token_hex(4)}_{clean_name}"
+    filepath = os.path.join(_GEN_DIR, fid)
+    return fid, clean_name, filepath
+
+
+import secrets
+
+
+@tool(
+    "create_word_docx",
+    "Buat dan unduh dokumen Microsoft Word (.docx) berformat rapi. Mendukung judul, subjudul, paragraf, daftar poin, dan tabel.",
+    {
+        "filename": {"type": "string", "description": "Nama berkas, mis. 'Laporan_Analisis.docx'."},
+        "title": {"type": "string", "description": "Judul utama dokumen."},
+        "sections": {
+            "type": "array",
+            "description": "Daftar seksi/bab. Tiap seksi berupa objek dengan 'heading' (opsional), 'text' (isi paragraf/teks, pisahkan baris dengan \\n), 'bullets' (daftar poin opsional), dan 'table' (daftar baris tabel opsional, misal [['Kolom 1', 'Kolom 2'], ['Nilai A', 'Nilai B']]).",
+            "items": {"type": "object"}
+        }
+    },
+    ["filename", "title", "sections"],
+    group="Dokumen & Berkas",
+)
+def create_word_docx(filename: str, title: str, sections: list):
+    try:
+        import docx
+        from docx.shared import Inches, Pt, RGBColor
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+        from docx.enum.table import WD_TABLE_ALIGNMENT
+
+        if not filename.lower().endswith(".docx"):
+            filename += ".docx"
+        fid, clean_name, path = _prepare_gen_file(filename)
+
+        doc = docx.Document()
+        
+        # Judul Utama
+        title_p = doc.add_paragraph()
+        title_run = title_p.add_run(title)
+        title_run.font.size = Pt(20)
+        title_run.font.bold = True
+        title_run.font.color.rgb = RGBColor(24, 106, 88)
+        title_p.paragraph_format.space_after = Pt(14)
+
+        for sec in sections:
+            if not isinstance(sec, dict):
+                continue
+            h = sec.get("heading")
+            if h:
+                hp = doc.add_paragraph()
+                hrun = hp.add_run(h)
+                hrun.font.size = Pt(14)
+                hrun.font.bold = True
+                hrun.font.color.rgb = RGBColor(30, 41, 59)
+                hp.paragraph_format.space_before = Pt(10)
+                hp.paragraph_format.space_after = Pt(4)
+
+            t = sec.get("text")
+            if t:
+                for line in str(t).split("\n"):
+                    if line.strip():
+                        p = doc.add_paragraph(line.strip())
+                        p.paragraph_format.space_after = Pt(4)
+
+            bullets = sec.get("bullets")
+            if isinstance(bullets, list):
+                for b in bullets:
+                    doc.add_paragraph(str(b), style='List Bullet')
+
+            tbl_data = sec.get("table")
+            if isinstance(tbl_data, list) and tbl_data:
+                rows_count = len(tbl_data)
+                cols_count = max(len(r) for r in tbl_data if isinstance(r, list))
+                if cols_count > 0:
+                    table = doc.add_table(rows=rows_count, cols=cols_count)
+                    table.style = 'Table Grid'
+                    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+                    for r_idx, row in enumerate(tbl_data):
+                        if not isinstance(row, list):
+                            continue
+                        for c_idx, cell in enumerate(row):
+                            if c_idx < cols_count:
+                                cell_obj = table.cell(r_idx, c_idx)
+                                cell_obj.text = str(cell)
+                                if r_idx == 0:
+                                    for p in cell_obj.paragraphs:
+                                        for r in p.runs:
+                                            r.font.bold = True
+                    doc.add_paragraph().paragraph_format.space_after = Pt(8)
+
+        doc.save(path)
+        url = f"/api/download/{fid}"
+        return {
+            "ok": True,
+            "filename": clean_name,
+            "download_url": url,
+            "pesan": f"Dokumen Word berhasil dibuat: [{clean_name}]({url})"
+        }
+    except Exception as e:
+        return {"error": f"Gagal membuat dokumen Word: {e}"}
+
+
+@tool(
+    "create_excel_xlsx",
+    "Buat dan unduh berkas Microsoft Excel (.xlsx) dengan format tabel rapi, header tebal, dan auto-fit lebar kolom.",
+    {
+        "filename": {"type": "string", "description": "Nama berkas, mis. 'Laporan_Keuangan.xlsx'."},
+        "sheets": {
+            "type": "object",
+            "description": "Kamus berisi nama sheet dan datanya (daftar baris). Contoh: {'Ringkasan': [['Kategori', 'Total'], ['Penjualan', 5000000], ['Biaya', 2000000]]}"
+        }
+    },
+    ["filename", "sheets"],
+    group="Dokumen & Berkas",
+)
+def create_excel_xlsx(filename: str, sheets: dict):
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        from openpyxl.utils import get_column_letter
+
+        if not filename.lower().endswith(".xlsx"):
+            filename += ".xlsx"
+        fid, clean_name, path = _prepare_gen_file(filename)
+
+        wb = openpyxl.Workbook()
+        # Hapus sheet default kosong jika kita buat sheet baru
+        default_sheet = wb.active
+
+        header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+        header_fill = PatternFill(start_color="186A58", end_color="186A58", fill_type="solid")
+        thin_border = Border(
+            left=Side(style="thin", color="CBD5E1"),
+            right=Side(style="thin", color="CBD5E1"),
+            top=Side(style="thin", color="CBD5E1"),
+            bottom=Side(style="thin", color="CBD5E1")
+        )
+
+        norm_sheets = {}
+        if isinstance(sheets, dict):
+            norm_sheets = sheets
+        elif isinstance(sheets, list):
+            if sheets and isinstance(sheets[0], dict) and ("data" in sheets[0] or "rows" in sheets[0]):
+                for item in sheets:
+                    s_name = item.get("name") or "Sheet1"
+                    s_rows = item.get("data") or item.get("rows") or []
+                    norm_sheets[s_name] = s_rows
+            elif sheets and isinstance(sheets[0], list):
+                norm_sheets["Data"] = sheets
+
+        if not norm_sheets:
+            norm_sheets = {"Sheet1": [["Informasi"], ["Tidak ada data yang dicantumkan."]]}
+
+        first = True
+        for sheet_name, rows in norm_sheets.items():
+            if not isinstance(rows, list) or not rows:
+                continue
+            ws = default_sheet if first else wb.create_sheet(title=str(sheet_name)[:30])
+            first = False
+            ws.title = str(sheet_name)[:30]
+
+            for r_idx, row in enumerate(rows, start=1):
+                if not isinstance(row, list):
+                    continue
+                for c_idx, val in enumerate(row, start=1):
+                    cell = ws.cell(row=r_idx, column=c_idx, value=val)
+                    cell.border = thin_border
+                    if r_idx == 1:
+                        cell.font = header_font
+                        cell.fill = header_fill
+                        cell.alignment = Alignment(horizontal="left", vertical="center")
+                    else:
+                        cell.font = Font(name="Calibri", size=11)
+
+            # Auto-fit kolom
+            for col in ws.columns:
+                max_len = max(len(str(c.value or '')) for c in col)
+                col_letter = get_column_letter(col[0].column)
+                ws.column_dimensions[col_letter].width = max(max_len + 3, 12)
+
+        wb.save(path)
+        url = f"/api/download/{fid}"
+        return {
+            "ok": True,
+            "filename": clean_name,
+            "download_url": url,
+            "pesan": f"Berkas Excel berhasil dibuat: [{clean_name}]({url})"
+        }
+    except Exception as e:
+        return {"error": f"Gagal membuat berkas Excel: {e}"}
+
+
+@tool(
+    "create_pdf_doc",
+    "Buat dan unduh dokumen PDF (.pdf) resmi dan profesional dengan judul, bab, teks, dan tabel data.",
+    {
+        "filename": {"type": "string", "description": "Nama berkas, mis. 'Laporan_Riset.pdf'."},
+        "title": {"type": "string", "description": "Judul laporan PDF."},
+        "content_blocks": {
+            "type": "array",
+            "description": "Daftar blok konten: [{'heading': '...', 'text': '...', 'table': [['col1', 'col2'], ['a', 'b']]}]",
+            "items": {"type": "object"}
+        }
+    },
+    ["filename", "title", "content_blocks"],
+    group="Dokumen & Berkas",
+)
+def create_pdf_doc(filename: str, title: str, content_blocks: list):
+    try:
+        import html
+        from reportlab.lib.pagesizes import letter, A4
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib import colors
+
+        if not filename.lower().endswith(".pdf"):
+            filename += ".pdf"
+        fid, clean_name, path = _prepare_gen_file(filename)
+
+        doc = SimpleDocTemplate(path, pagesize=A4, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
+        styles = getSampleStyleSheet()
+
+        title_style = ParagraphStyle(
+            'ReportTitle',
+            parent=styles['Heading1'],
+            fontName='Helvetica-Bold',
+            fontSize=20,
+            leading=24,
+            textColor=colors.HexColor('#186A58'),
+            spaceAfter=14
+        )
+
+        heading_style = ParagraphStyle(
+            'SectionHeading',
+            parent=styles['Heading2'],
+            fontName='Helvetica-Bold',
+            fontSize=13,
+            leading=17,
+            textColor=colors.HexColor('#0F172A'),
+            spaceBefore=10,
+            spaceAfter=4
+        )
+
+        body_style = ParagraphStyle(
+            'BodyTextCustom',
+            parent=styles['Normal'],
+            fontName='Helvetica',
+            fontSize=10,
+            leading=14,
+            textColor=colors.HexColor('#334155'),
+            spaceAfter=6
+        )
+
+        elements = []
+        elements.append(Paragraph(html.escape(title), title_style))
+        elements.append(Spacer(1, 10))
+
+        for block in content_blocks:
+            if not isinstance(block, dict):
+                continue
+            h = block.get("heading")
+            if h:
+                elements.append(Paragraph(html.escape(h), heading_style))
+
+            t = block.get("text")
+            if t:
+                for line in str(t).split("\n"):
+                    if line.strip():
+                        elements.append(Paragraph(html.escape(line.strip()), body_style))
+
+            tbl = block.get("table")
+            if isinstance(tbl, list) and tbl:
+                formatted_tbl = []
+                for row in tbl:
+                    if isinstance(row, list):
+                        formatted_tbl.append([Paragraph(html.escape(str(c)), body_style) for c in row])
+                if formatted_tbl:
+                    t_obj = Table(formatted_tbl, colWidths=None)
+                    t_obj.setStyle(TableStyle([
+                        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#E2E8F0')),
+                        ('TEXTCOLOR', (0, 0), (-1, 0), colors.HexColor('#0F172A')),
+                        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+                        ('TOPPADDING', (0, 0), (-1, -1), 5),
+                        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#CBD5E1')),
+                    ]))
+                    elements.append(t_obj)
+                    elements.append(Spacer(1, 8))
+
+        doc.build(elements)
+        url = f"/api/download/{fid}"
+        return {
+            "ok": True,
+            "filename": clean_name,
+            "download_url": url,
+            "pesan": f"Dokumen PDF berhasil dibuat: [{clean_name}]({url})"
+        }
+    except Exception as e:
+        return {"error": f"Gagal membuat dokumen PDF: {e}"}
+
+
+@tool(
+    "create_powerpoint_pptx",
+    "Buat dan unduh presentasi slide Microsoft PowerPoint (.pptx) lengkap dengan slide judul dan slide isi.",
+    {
+        "filename": {"type": "string", "description": "Nama berkas, mis. 'Presentasi_Proyek.pptx'."},
+        "title": {"type": "string", "description": "Judul presentasi."},
+        "subtitle": {"type": "string", "description": "Subjudul presentasi."},
+        "slides": {
+            "type": "array",
+            "description": "Daftar slide materi: [{'title': 'Judul Slide', 'bullets': ['Poin 1', 'Poin 2']}]",
+            "items": {"type": "object"}
+        }
+    },
+    ["filename", "title", "slides"],
+    group="Dokumen & Berkas",
+)
+def create_powerpoint_pptx(filename: str, title: str, slides: list, subtitle: str = ""):
+    try:
+        from pptx import Presentation
+        from pptx.util import Inches, Pt
+        from pptx.dml.color import RGBColor
+
+        if not filename.lower().endswith(".pptx"):
+            filename += ".pptx"
+        fid, clean_name, path = _prepare_gen_file(filename)
+
+        prs = Presentation()
+
+        # Slide 1: Judul
+        title_slide_layout = prs.slide_layouts[0]
+        slide = prs.slides.add_slide(title_slide_layout)
+        t_box = slide.shapes.title
+        sub_box = slide.placeholders[1]
+        t_box.text = title
+        if subtitle:
+            sub_box.text = subtitle
+
+        # Slide-slide konten
+        bullet_slide_layout = prs.slide_layouts[1]
+        for s_data in slides:
+            if not isinstance(s_data, dict):
+                continue
+            slide = prs.slides.add_slide(bullet_slide_layout)
+            slide.shapes.title.text = s_data.get("title", "Materi")
+            body_shape = slide.placeholders[1]
+            tf = body_shape.text_frame
+
+            bullets = s_data.get("bullets", [])
+            if isinstance(bullets, list) and bullets:
+                tf.text = str(bullets[0])
+                for b in bullets[1:]:
+                    p = tf.add_paragraph()
+                    p.text = str(b)
+                    p.level = 0
+            elif s_data.get("text"):
+                tf.text = str(s_data.get("text"))
+
+        prs.save(path)
+        url = f"/api/download/{fid}"
+        return {
+            "ok": True,
+            "filename": clean_name,
+            "download_url": url,
+            "pesan": f"Presentasi PowerPoint berhasil dibuat: [{clean_name}]({url})"
+        }
+    except Exception as e:
+        return {"error": f"Gagal membuat presentasi PowerPoint: {e}"}
+
