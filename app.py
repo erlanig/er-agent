@@ -347,9 +347,6 @@ def health():
 
 @app.get("/api/download/<file_id>")
 def download_generated_file(file_id: str):
-    state = _auth_state()
-    if state != "ok":
-        return _auth_error(state)
     if not re.fullmatch(r"[\w.\-]+", file_id):
         abort(400)
 

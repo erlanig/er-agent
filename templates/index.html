@@ -701,9 +701,9 @@ function renderMarkdown(src){
   const prepared = parts.map((p, i) => {
     if(i % 2) return p;
     let text = extractMath(p, bag);
-    // Auto-linkify domain lengkap dan link relatif share / download agar marked menghasilkan <a> tag
-    text = text.replace(/(^|[\s(>])((?:https?:\/\/[^\s\/]+)?\/share\/html\/[a-zA-Z0-9_\-?&=%#]+)/g, '$1[$2]($2)');
-    text = text.replace(/(^|[\s(>])((?:https?:\/\/[^\s\/]+)?\/api\/download\/[a-zA-Z0-9_\-.]+)/g, '$1[$2]($2)');
+    // Hanya auto-linkify link relatif polos (/share/html/... atau /api/download/...)
+    // yang belum dibungkus markdown link [teks](url) agar tidak merusak tautan yang sudah valid
+    text = text.replace(/(?<!\]\()(?:(?<=[\s>])|(?<=^))(\/(?:share\/html|api\/download)\/[a-zA-Z0-9_\-?&=%#.]+)/g, '[$1](https://er-agent-inky.vercel.app$1)');
     return text;
   }).join('');
   let html = DOMPurify.sanitize(marked.parse(prepared, {gfm: true, breaks: true}));
@@ -832,6 +832,14 @@ function enhance(root, live){
 
   root.querySelectorAll('a').forEach(a => { a.target = '_blank'; a.rel = 'noopener noreferrer'; });
 
+  // Normalisasi link download agar selalu memiliki domain lengkap
+  root.querySelectorAll('a[href*="/api/download/"]').forEach(a => {
+    let href = a.getAttribute('href') || '';
+    if(href.startsWith('/')){
+      a.setAttribute('href', 'https://er-agent-inky.vercel.app' + href);
+    }
+  });
+
   // Deteksi tautan /share/html/... dan buatkan Kartu Tautan Interaktif
   root.querySelectorAll('a[href*="/share/html/"]').forEach(a => {
     const parentMsg = a.closest('.msg.bot');
@@ -840,7 +848,9 @@ function enhance(root, live){
     let href = a.getAttribute('href') || '';
     const fullHref = href.startsWith('http') ? href : ('https://er-agent-inky.vercel.app' + href);
     a.setAttribute('href', fullHref);
-    a.textContent = fullHref;
+    if(a.textContent.startsWith('/') || a.textContent.startsWith('http')){
+      a.textContent = fullHref;
+    }
     
     const msgText = parentMsg.textContent || '';
     const passMatch = msgText.match(/(?:passcode|kode(?:\s*akses)?)\s*[:=]\s*([A-Za-z0-9]{4,10})/i);
