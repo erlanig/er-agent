@@ -6,3 +6,5 @@ __pycache__/
 *.pyc
 .vercel/
 .DS_Store
+data/
+*.tmp

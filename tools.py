@@ -63,10 +63,15 @@ _GOOGLE_VARS = ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKE
 
 
 def integrations() -> dict:
+    import db
     return {
         "google": all(os.getenv(v) for v in _GOOGLE_VARS),
         "github": bool(os.getenv("GITHUB_TOKEN")),
         "telegram": bool(os.getenv("TELEGRAM_BOT_TOKEN")),
+        "google_search": bool(os.getenv("GOOGLE_CSE_API_KEY") and (os.getenv("GOOGLE_CSE_ID") or os.getenv("GOOGLE_SEARCH_CX"))),
+        "serpapi": bool(os.getenv("SERPAPI_API_KEY")),
+        "tavily": bool(os.getenv("TAVILY_API_KEY")),
+        "database": db.enabled(),
     }
 
 
@@ -1242,3 +1247,4 @@ def telegram_send(text: str, chat_id: str | None = None):
 # mengimpor helper dari file ini dan mendaftarkan tool-nya ke _REGISTRY.
 # --------------------------------------------------------------------------
 import tools_extra  # noqa: E402,F401
+import tools_advanced  # noqa: E402,F401
