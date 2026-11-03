@@ -183,6 +183,24 @@ svg{display:block;flex:none}
 .code pre code{font-family:var(--mono);font-size:12.5px;line-height:1.6;background:none!important;padding:0!important;border:0}
 .hljs{background:transparent!important}
 
+/* Interactive HTML Live Preview Box & Sharing */
+.html-preview-box{margin:1.1em 0;border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--surface);box-shadow:var(--shadow)}
+.html-head{display:flex;align-items:center;justify-content:space-between;padding:7px 12px;border-bottom:1px solid var(--line);background:var(--code);font-size:12px;gap:8px;flex-wrap:wrap}
+.html-head-left{display:flex;align-items:center;gap:10px}
+.html-title{font-weight:600;font-size:12.5px;color:var(--ink)}
+.html-tabs{display:inline-flex;background:var(--hover);padding:2px;border-radius:7px;gap:2px}
+.html-tab{border:0;background:none;font-size:11.5px;font-weight:600;padding:3px 8px;border-radius:5px;color:var(--muted);cursor:pointer;transition:all .15s}
+.html-tab.on{background:var(--surface);color:var(--accent);box-shadow:0 1px 2px rgba(0,0,0,.06)}
+.html-head-right{display:flex;align-items:center;gap:5px;margin-left:auto}
+.html-act-btn{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:3px 8px;border-radius:6px;font-size:11.5px;font-weight:600;cursor:pointer;transition:all .12s}
+.html-act-btn:hover{background:var(--hover);border-color:var(--accent)}
+.html-act-btn.share-btn{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.html-act-btn.share-btn:hover{background:var(--accent);color:var(--accent-ink)}
+.html-body{position:relative;background:#ffffff;border-radius:0 0 11px 11px;overflow:hidden}
+.html-frame-wrap{width:100%;height:380px;min-height:220px;resize:vertical;overflow:hidden;background:#ffffff;position:relative}
+.html-iframe{width:100%;height:100%;border:0;display:block;background:#ffffff}
+.html-code-wrap pre{margin:0;max-height:380px;overflow:auto;border:0;border-radius:0}
+
 /* Tidy Tables with Copy & Font Formatting */
 .tbl-wrap{position:relative;margin:1em 0;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--surface)}
 .tbl-bar{display:flex;align-items:center;justify-content:space-between;padding:4px 8px;border-bottom:1px solid var(--line);background:var(--code);font-size:11.5px;color:var(--muted)}
@@ -454,7 +472,9 @@ const ICONS = {
   shield:'<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
   table:'<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/>',
   book:'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M4 19.5A2.5 2.5 0 0 0 6.5 22H20V2H6.5A2.5 2.5 0 0 0 4 4.5z"/>',
-  code:'<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>'
+  code:'<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>',
+  external:'<path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>',
+  globe:'<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>'
 };
 
 function ico(name, size = 16){
@@ -783,12 +803,16 @@ function enhance(root, live){
 
   // Blok Kode
   root.querySelectorAll('pre').forEach(pre => {
-    if(pre.parentElement.classList.contains('code') || pre.parentElement.classList.contains('mermaid-box')) return;
+    if(pre.parentElement.classList.contains('code') || pre.parentElement.classList.contains('mermaid-box') || pre.parentElement.classList.contains('html-code-wrap')) return;
     const code = pre.querySelector('code'); if(!code) return;
     const lang = (code.className.match(/language-([\w+-]+)/) || [])[1] || 'teks';
     
     if(lang === 'mermaid' && !live && window.mermaid){
       renderMermaid(pre, code.textContent);
+      return;
+    }
+    if((lang === 'html' || lang === 'htm') && !live){
+      renderHtmlPreview(pre, code.textContent);
       return;
     }
     if(window.hljs && !live){ try{ hljs.highlightElement(code); }catch{} }
@@ -817,6 +841,230 @@ function renderMermaid(pre, src){
       document.querySelectorAll('[id^="dmm"]').forEach(x => x.remove());
       view.replaceChildren(el('div', 'err', 'Diagram tidak valid: ' + (e.message || e)), pre);
     });
+}
+
+function renderHtmlPreview(pre, src){
+  const box = el('div', 'html-preview-box');
+  const head = el('div', 'html-head');
+
+  const left = el('div', 'html-head-left');
+  left.append(ico('globe', 14));
+  const titleSpan = el('span', 'html-title', 'Pratinjau HTML Interaktif');
+  left.append(titleSpan);
+
+  const tabs = el('div', 'html-tabs');
+  const btnPrev = el('button', 'html-tab on', 'Pratinjau');
+  btnPrev.type = 'button';
+  const btnCode = el('button', 'html-tab', 'Kode HTML');
+  btnCode.type = 'button';
+  tabs.append(btnPrev, btnCode);
+  left.append(tabs);
+  head.append(left);
+
+  const right = el('div', 'html-head-right');
+
+  // Tab baru
+  const openBtn = el('button', 'html-act-btn', 'Tab Baru');
+  openBtn.type = 'button';
+  openBtn.title = 'Buka pratinjau di tab baru browser';
+  openBtn.prepend(ico('external', 12));
+  openBtn.onclick = () => {
+    const blob = new Blob([src], {type: 'text/html;charset=utf-8'});
+    const blobUrl = URL.createObjectURL(blob);
+    window.open(blobUrl, '_blank');
+  };
+  right.append(openBtn);
+
+  // Bagikan (Share dengan Passcode)
+  const shareBtn = el('button', 'html-act-btn share-btn', 'Bagikan');
+  shareBtn.type = 'button';
+  shareBtn.title = 'Bagikan dengan tautan ber-passcode acak';
+  shareBtn.prepend(ico('shield', 12));
+  shareBtn.onclick = () => openShareHtmlDialog(src);
+  right.append(shareBtn);
+
+  // Salin Kode
+  const cpBtn = el('button', 'html-act-btn', 'Salin');
+  cpBtn.type = 'button';
+  cpBtn.prepend(ico('copy', 12));
+  cpBtn.onclick = () => copyText(src, cpBtn);
+  right.append(cpBtn);
+
+  head.append(right);
+
+  const body = el('div', 'html-body');
+  const frameWrap = el('div', 'html-frame-wrap');
+  const iframe = el('iframe', 'html-iframe');
+  iframe.sandbox = "allow-scripts allow-modals allow-forms allow-same-origin";
+  iframe.loading = "lazy";
+  frameWrap.append(iframe);
+
+  const codeWrap = el('div', 'html-code-wrap');
+  codeWrap.style.display = 'none';
+  const codePre = pre.cloneNode(true);
+  const codeEl = codePre.querySelector('code');
+  if(codeEl && window.hljs){ try{ hljs.highlightElement(codeEl); }catch{} }
+  codeWrap.append(codePre);
+
+  body.append(frameWrap, codeWrap);
+  box.append(head, body);
+  pre.replaceWith(box);
+
+  try{
+    iframe.srcdoc = src;
+  }catch(e){
+    const b = new Blob([src], {type: 'text/html;charset=utf-8'});
+    iframe.src = URL.createObjectURL(b);
+  }
+
+  btnPrev.onclick = () => {
+    btnPrev.classList.add('on');
+    btnCode.classList.remove('on');
+    frameWrap.style.display = 'block';
+    codeWrap.style.display = 'none';
+  };
+  btnCode.onclick = () => {
+    btnCode.classList.add('on');
+    btnPrev.classList.remove('on');
+    frameWrap.style.display = 'none';
+    codeWrap.style.display = 'block';
+  };
+}
+
+async function openShareHtmlDialog(htmlContent){
+  const curChat = active();
+  const chatId = curChat ? curChat.id : '';
+  const projId = curChat ? (curChat.projectId || '') : '';
+  const chatTitle = (curChat ? curChat.title : '') || 'Halaman Web ER Agent';
+
+  openDialog({
+    title: 'Membuat Tautan Berbagi Terproteksi…',
+    body: (() => {
+      const w = el('div');
+      w.style.padding = '18px 0';
+      w.style.textAlign = 'center';
+      w.style.color = 'var(--muted)';
+      w.textContent = 'Menghasilkan UUID unik dan 6-digit passcode acak…';
+      return w;
+    })(),
+    submit: null
+  });
+
+  try{
+    const res = await api('/api/share/html', {
+      method: 'POST',
+      body: JSON.stringify({
+        html: htmlContent,
+        title: chatTitle,
+        chat_id: chatId,
+        project_id: projId
+      })
+    });
+    const j = await res.json();
+    closeDialog();
+
+    if(!res.ok || !j.ok){
+      alert('Gagal membuat tautan berbagi: ' + (j.error || 'Terjadi kesalahan'));
+      return;
+    }
+
+    const share = j.share;
+    const fullUrl = window.location.origin + share.path;
+    const passcode = share.passcode;
+
+    openDialog({
+      title: 'Halaman HTML Berhasil Dibagikan',
+      wide: true,
+      body: (() => {
+        const wrap = el('div');
+        wrap.style.display = 'grid';
+        wrap.style.gap = '16px';
+
+        const intro = el('p');
+        intro.style.margin = '0';
+        intro.style.fontSize = '13.5px';
+        intro.style.lineHeight = '1.5';
+        intro.style.color = 'var(--muted)';
+        intro.innerHTML = 'Halaman telah dipublikasikan dengan tautan aman dan <b>diproteksi passcode acak</b>. Siapa pun yang membuka tautan wajib memasukkan passcode berikut untuk melihatnya.';
+        wrap.append(intro);
+
+        // 1. Tautan URL Lengkap
+        const l1 = el('label', 'field');
+        l1.append(el('span', '', 'Tautan URL Berbagi (dengan UUID & Parameter Lengkap)'));
+        const urlRow = el('div');
+        urlRow.style.display = 'flex';
+        urlRow.style.gap = '8px';
+        const inpUrl = el('input');
+        inpUrl.value = fullUrl;
+        inpUrl.readOnly = true;
+        inpUrl.style.fontFamily = 'var(--mono)';
+        inpUrl.style.fontSize = '12px';
+        const cpUrlBtn = el('button', 'btn', 'Salin URL');
+        cpUrlBtn.type = 'button';
+        cpUrlBtn.onclick = () => copyText(fullUrl, cpUrlBtn);
+        urlRow.append(inpUrl, cpUrlBtn);
+        l1.append(urlRow);
+        wrap.append(l1);
+
+        // 2. Passcode
+        const l2 = el('label', 'field');
+        l2.append(el('span', '', 'Passcode Akses (6 Karakter Acak)'));
+        const passRow = el('div');
+        passRow.style.display = 'flex';
+        passRow.style.gap = '8px';
+        const inpPass = el('input');
+        inpPass.value = passcode;
+        inpPass.readOnly = true;
+        inpPass.style.fontFamily = 'var(--mono)';
+        inpPass.style.fontSize = '18px';
+        inpPass.style.fontWeight = '700';
+        inpPass.style.letterSpacing = '3px';
+        inpPass.style.textAlign = 'center';
+        inpPass.style.maxWidth = '180px';
+        inpPass.style.color = 'var(--accent)';
+        inpPass.style.background = 'var(--accent-soft)';
+        const cpPassBtn = el('button', 'btn', 'Salin Passcode');
+        cpPassBtn.type = 'button';
+        cpPassBtn.onclick = () => copyText(passcode, cpPassBtn);
+        passRow.append(inpPass, cpPassBtn);
+        l2.append(passRow);
+        wrap.append(l2);
+
+        // 3. Tombol Salin Keduanya Sekaligus
+        const bothBox = el('div');
+        bothBox.style.padding = '12px 14px';
+        bothBox.style.background = 'var(--hover)';
+        bothBox.style.border = '1px solid var(--line)';
+        bothBox.style.borderRadius = '10px';
+        bothBox.style.display = 'flex';
+        bothBox.style.alignItems = 'center';
+        bothBox.style.justifyContent = 'space-between';
+        bothBox.style.gap = '10px';
+
+        const bothTxt = el('div');
+        bothTxt.style.fontSize = '13px';
+        bothTxt.style.color = 'var(--ink)';
+        bothTxt.innerHTML = 'Kirim ke tim atau klien? Salin pesan komplit beserta instruksi akses.';
+        const cpBothBtn = el('button', 'btn primary', 'Salin Tautan & Passcode');
+        cpBothBtn.type = 'button';
+        cpBothBtn.onclick = () => {
+          const comboText = `Buka pratinjau halaman web ini:\n${fullUrl}\n\nPasscode Akses: ${passcode}`;
+          copyText(comboText, cpBothBtn);
+        };
+        bothBox.append(bothTxt, cpBothBtn);
+        wrap.append(bothBox);
+
+        return wrap;
+      })(),
+      submit: 'Buka Halaman',
+      onSubmit: () => {
+        window.open(fullUrl, '_blank');
+      }
+    });
+  }catch(e){
+    closeDialog();
+    alert('Terjadi kesalahan: ' + e.message);
+  }
 }
 
 async function copyText(text, btn){

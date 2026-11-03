@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }} · Pratinjau HTML Terproteksi</title>
+<script nonce="{{ csp_nonce }}">try{var t=JSON.parse(localStorage.getItem('bc.settings')||'{}').theme;if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style nonce="{{ csp_nonce }}">
+:root{
+  --bg:#f8fafc; --surface:#ffffff; --hover:#f1f5f9; --ink:#0f172a; --muted:#64748b;
+  --line:#e2e8f0; --accent:#186a58; --accent-ink:#ffffff; --accent-soft:#e3f2ef;
+  --ok:#16a34a; --err:#dc2626; --err-soft:#fef2f2;
+  --shadow:0 4px 16px rgba(15,23,42,.06);
+  --shadow-lg:0 12px 32px rgba(15,23,42,.12);
+  --font:"Plus Jakarta Sans", system-ui, sans-serif;
+  --mono:"JetBrains Mono", Consolas, monospace;
+}
+:root[data-theme="dark"]{
+  --bg:#090d11; --surface:#111720; --hover:#1b2432; --ink:#f1f5f9; --muted:#8896aa;
+  --line:#202b3c; --accent:#34a087; --accent-ink:#090d11; --accent-soft:#142c26;
+  --ok:#22c55e; --err:#ef4444; --err-soft:#301519;
+  --shadow:0 4px 16px rgba(0,0,0,.35);
+  --shadow-lg:0 12px 32px rgba(0,0,0,.5);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme]){
+    --bg:#090d11; --surface:#111720; --hover:#1b2432; --ink:#f1f5f9; --muted:#8896aa;
+    --line:#202b3c; --accent:#34a087; --accent-ink:#090d11; --accent-soft:#142c26;
+    --ok:#22c55e; --err:#ef4444; --err-soft:#301519;
+    --shadow:0 4px 16px rgba(0,0,0,.35);
+    --shadow-lg:0 12px 32px rgba(0,0,0,.5);
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:14px}
+
+/* Topbar View */
+.topbar{height:52px;border-bottom:1px solid var(--line);background:var(--surface);display:flex;align-items:center;justify-content:space-between;padding:0 16px;gap:12px;z-index:10}
+.brand{display:flex;align-items:center;gap:9px;font-weight:700;font-size:14px;color:var(--ink);text-decoration:none}
+.brand img{width:22px;height:22px;border-radius:6px}
+.title-badge{display:flex;align-items:center;gap:8px;min-width:0}
+.page-title{font-weight:600;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:320px}
+.pill{font-size:11px;font-weight:600;padding:2px 8px;border-radius:99px;background:var(--accent-soft);color:var(--accent);letter-spacing:.02em;white-space:nowrap}
+.pill.lock{background:color-mix(in srgb, var(--accent) 15%, transparent);display:inline-flex;align-items:center;gap:4px}
+
+.actions{display:flex;align-items:center;gap:6px}
+.view-tabs{display:inline-flex;background:var(--hover);padding:3px;border-radius:8px;gap:2px}
+.tab-btn{border:0;background:none;font-size:12px;font-weight:600;padding:4px 9px;border-radius:6px;color:var(--muted);cursor:pointer;transition:all .15s}
+.tab-btn.active{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:6px 11px;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer;text-decoration:none;transition:all .15s}
+.btn:hover{background:var(--hover);border-color:color-mix(in srgb, var(--line) 70%, var(--accent))}
+.btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.btn.primary:hover{opacity:.92}
+
+/* Frame Container */
+.preview-stage{height:calc(100% - 52px);width:100%;display:flex;align-items:center;justify-content:center;background:var(--bg);overflow:hidden;position:relative}
+.frame-wrap{width:100%;height:100%;display:flex;justify-content:center;transition:max-width .2s cubic-bezier(.2,.8,.2,1);position:relative}
+.frame-wrap.desktop{max-width:100%}
+.frame-wrap.tablet{max-width:768px;border-left:1px solid var(--line);border-right:1px solid var(--line);box-shadow:var(--shadow-lg)}
+.frame-wrap.mobile{max-width:390px;border-left:1px solid var(--line);border-right:1px solid var(--line);box-shadow:var(--shadow-lg)}
+iframe#htmlFrame{width:100%;height:100%;border:0;background:#ffffff}
+
+/* Passcode Gate Screen */
+.gate-wrap{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:16px;z-index:100}
+.gate-card{width:100%;max-width:420px;background:var(--surface);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow-lg);padding:32px 28px;text-align:center}
+.gate-icon{width:54px;height:54px;border-radius:16px;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;margin:0 auto 16px}
+.gate-card h2{margin:0 0 8px;font-size:20px;font-weight:700;letter-spacing:-.015em}
+.gate-card p{margin:0 0 24px;color:var(--muted);font-size:13.5px;line-height:1.55}
+.pass-group{display:flex;gap:8px;justify-content:center;margin-bottom:18px}
+.pass-input{width:100%;max-width:260px;height:48px;font-family:var(--mono);font-size:22px;font-weight:700;letter-spacing:6px;text-transform:uppercase;text-align:center;border:1.5px solid var(--line);border-radius:12px;background:var(--bg);color:var(--ink);outline:0;transition:border-color .15s}
+.pass-input:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent)}
+.gate-btn{width:100%;max-width:260px;height:44px;font-size:14px;font-weight:600}
+.err-box{margin-top:14px;font-size:13px;color:var(--err);display:none;background:var(--err-soft);padding:8px 12px;border-radius:8px;border:1px solid color-mix(in srgb, var(--err) 30%, transparent)}
+
+.footer-note{margin-top:22px;padding-top:16px;border-top:1px solid var(--line);font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+
+<!-- Passcode Gate (Ditampilkan jika belum unlock) -->
+<div class="gate-wrap" id="gateWrap" {% if unlocked %}style="display:none"{% endif %}>
+  <div class="gate-card">
+    <div class="gate-icon">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+      </svg>
+    </div>
+    <h2>Halaman HTML Terproteksi</h2>
+    <p>Halaman ini dibagikan melalui <b>ER Agent</b> dan dilindungi kode akses. Masukkan 6-karakter passcode untuk membuka pratinjau.</p>
+    
+    <form id="passForm" autocomplete="off">
+      <div class="pass-group">
+        <input type="text" id="passInput" class="pass-input" maxlength="6" placeholder="______" autofocus required spellcheck="false" autocomplete="one-time-code">
+      </div>
+      <button type="submit" class="btn primary gate-btn" id="unlockBtn">Buka Pratinjau</button>
+      <div class="err-box" id="errBox"></div>
+    </form>
+
+    <div class="footer-note">
+      Diproteksi oleh <b>ER Agent Security</b> · Tautan Berbagi Aman
+    </div>
+  </div>
+</div>
+
+<!-- Main Viewer (Aktif setelah unlock) -->
+<div class="topbar">
+  <div class="title-badge">
+    <a href="/" class="brand" title="ER Agent Workspace">
+      <img src="/bird.png" alt="Logo">
+      <span>ER Agent</span>
+    </a>
+    <span style="color:var(--line)">/</span>
+    <span class="page-title" id="pageTitleDisplay">{{ title }}</span>
+    <span class="pill lock">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+      Tautan Terproteksi
+    </span>
+  </div>
+
+  <div class="actions">
+    <!-- Viewport Switcher -->
+    <div class="view-tabs" id="vpTabs">
+      <button type="button" class="tab-btn active" data-vp="desktop" title="Tampilan Desktop">Desktop</button>
+      <button type="button" class="tab-btn" data-vp="tablet" title="Tampilan Tablet (768px)">Tablet</button>
+      <button type="button" class="tab-btn" data-vp="mobile" title="Tampilan Mobile (390px)">Ponsel</button>
+    </div>
+
+    <!-- Actions -->
+    <button type="button" class="btn" id="rawBtn" title="Buka di tab penuh browser">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+      Tab Baru
+    </button>
+    <button type="button" class="btn primary" id="downloadBtn" title="Unduh berkas .html">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+      Unduh HTML
+    </button>
+  </div>
+</div>
+
+<div class="preview-stage">
+  <div class="frame-wrap desktop" id="frameWrap">
+    <iframe id="htmlFrame" sandbox="allow-scripts allow-modals allow-forms allow-same-origin" src="about:blank"></iframe>
+  </div>
+</div>
+
+<script nonce="{{ csp_nonce }}">
+const SHARE_ID = {{ share_id|tojson }};
+let isUnlocked = {{ unlocked|tojson }};
+const frame = document.getElementById('htmlFrame');
+const gateWrap = document.getElementById('gateWrap');
+const passForm = document.getElementById('passForm');
+const passInput = document.getElementById('passInput');
+const errBox = document.getElementById('errBox');
+const unlockBtn = document.getElementById('unlockBtn');
+const frameWrap = document.getElementById('frameWrap');
+
+function loadFrameContent(){
+  frame.src = `/share/raw/${SHARE_ID}`;
+}
+
+if(isUnlocked){
+  loadFrameContent();
+} else {
+  // Cek apakah di sessionStorage sudah tersimpan passcode valid untuk share ini
+  const cachedPass = sessionStorage.getItem(`share_pass_${SHARE_ID}`);
+  if(cachedPass){
+    unlockWithPasscode(cachedPass, true);
+  }
+}
+
+// Format input passcode otomatis uppercase dan bersih
+passInput.addEventListener('input', () => {
+  passInput.value = passInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  errBox.style.display = 'none';
+});
+
+passForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const val = passInput.value.trim().toUpperCase();
+  if(!val) return;
+  await unlockWithPasscode(val, false);
+});
+
+async function unlockWithPasscode(passcode, isSilent){
+  unlockBtn.disabled = true;
+  unlockBtn.textContent = 'Memeriksa…';
+  if(!isSilent) errBox.style.display = 'none';
+
+  try{
+    const res = await fetch('/api/share/verify', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Requested-With': 'er-agent'
+      },
+      body: JSON.stringify({share_id: SHARE_ID, passcode: passcode})
+    });
+    const j = await res.json().catch(() => ({}));
+    if(res.ok && j.ok){
+      sessionStorage.setItem(`share_pass_${SHARE_ID}`, passcode);
+      gateWrap.style.display = 'none';
+      loadFrameContent();
+    } else {
+      if(isSilent){
+        sessionStorage.removeItem(`share_pass_${SHARE_ID}`);
+      } else {
+        errBox.textContent = j.error || 'Passcode salah. Periksa kembali huruf dan angka.';
+        errBox.style.display = 'block';
+        passInput.select();
+      }
+    }
+  }catch(err){
+    if(!isSilent){
+      errBox.textContent = 'Gagal menghubungi server. Periksa koneksi.';
+      errBox.style.display = 'block';
+    }
+  }finally{
+    unlockBtn.disabled = false;
+    unlockBtn.textContent = 'Buka Pratinjau';
+  }
+}
+
+// Viewport Switcher
+document.querySelectorAll('#vpTabs .tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#vpTabs .tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const vp = btn.dataset.vp;
+    frameWrap.className = 'frame-wrap ' + vp;
+  });
+});
+
+// Buka Tab Penuh
+document.getElementById('rawBtn').addEventListener('click', () => {
+  window.open(`/share/raw/${SHARE_ID}`, '_blank');
+});
+
+// Unduh berkas HTML
+document.getElementById('downloadBtn').addEventListener('click', () => {
+  const a = document.createElement('a');
+  a.href = `/share/raw/${SHARE_ID}?download=1`;
+  a.download = (document.getElementById('pageTitleDisplay').textContent || 'halaman') + '.html';
+  a.click();
+});
+</script>
+</body>
+</html>

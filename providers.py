@@ -88,7 +88,7 @@ _ROUTES = {
     "GitHub": r"github|repo|workflow|ci/?cd|issue|pull request|\bpr\b|commit|deploy|actions",
     "Telegram": r"telegram|ingatkan|pengingat|reminder",
     "Penjadwalan": r"jadwal|schedule|ingat|remind|nanti|pukul|\bjam\b|terjadwal|batalkan|cron",
-    "Dokumen & Berkas": r"doc|docx|word|excel|xlsx|spreadsheet|pdf|ppt|pptx|powerpoint|slide|presentasi|berkas|laporan|unduh|download",
+    "Dokumen & Berkas": r"doc|docx|word|excel|xlsx|spreadsheet|pdf|ppt|pptx|powerpoint|slide|presentasi|berkas|laporan|unduh|download|html|halaman|web|preview|share|bagikan",
 }
 
 
@@ -139,6 +139,10 @@ _ANTI_SLOP_GUIDELINES = (
     "6. DIAGRAM: Gunakan blok ```mermaid untuk alur arsitektur, sequence diagram, atau entity-relationship.\n"
     "7. BEBAS EMOJI (STRICT): DILARANG KERAS menggunakan emoji dalam jawaban apa pun (termasuk salam, heading, poin, penutup, atau kode), KECUALI jika pengguna secara eksplisit memintanya dalam pertanyaannya. Jawaban harus bersih, elegan, dan profesional layaknya laporan teknik atau paper sains.\n"
     "8. PEMBUATAN DOKUMEN & BERKAS: Bila pengguna meminta dibuatkan dokumen Word (.docx), spreadsheet Excel (.xlsx), PDF (.pdf), atau presentasi PowerPoint (.pptx), panggil tool yang sesuai: create_word_docx, create_excel_xlsx, create_pdf_doc, atau create_powerpoint_pptx. Tool akan otomatis menghasilkan berkas dan tautan unduhan langsung untuk pengguna.\n"
+    "9. HALAMAN WEB & HTML: Bila pengguna meminta dibuatkan halaman HTML, UI web, landing page, atau prototipe interaktif: "
+    "sajikan kode HTML mandiri yang lengkap dan rapi di dalam blok ```html. Antarmuka ER Agent secara otomatis merender "
+    "Pratinjau Interaktif langsung (Live Preview) di obrolan dan menyediakan tombol 'Bagikan' dengan proteksi passcode acak. "
+    "Bila diminta tautan berbagi langsung, kamu juga dapat memanggil tool create_html_page.\n"
 )
 
 

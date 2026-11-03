@@ -22,6 +22,7 @@ import db  # noqa: E402
 import legal  # noqa: E402
 from providers import MODELS, diagnose, run_chat  # noqa: E402
 import settings_store  # noqa: E402
+import share_store  # noqa: E402
 from tools import google_status, integrations, tool_specs  # noqa: E402
 from tools_extra import run_due_jobs  # noqa: E402
 
@@ -188,15 +189,18 @@ def _security_pre_request():
     if request.method in ("POST", "PUT", "DELETE", "PATCH"):
         path = request.path
         if path.startswith("/api/") and not path.startswith("/api/cron/"):
-            # Pengecualian hanya untuk login awal jika form bawaan, namun semua API klien kita mengirim header
+            # Pengecualian hanya untuk login awal dan verifikasi passcode publik
             req_header = request.headers.get("X-Requested-With", "")
-            if req_header != "er-agent" and path not in ("/api/login",):
+            if req_header != "er-agent" and path not in ("/api/login", "/api/share/verify"):
                 return jsonify(error="Permintaan ditolak: Header CSRF (X-Requested-With: er-agent) wajib disertakan."), 403
 
 
 @app.after_request
 def _apply_security_headers(resp):
-    resp.headers["X-Frame-Options"] = "DENY"
+    if request.path.startswith("/share/raw/"):
+        resp.headers["X-Frame-Options"] = "SAMEORIGIN"
+    else:
+        resp.headers["X-Frame-Options"] = "DENY"
     resp.headers["X-Content-Type-Options"] = "nosniff"
     resp.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     
@@ -209,6 +213,8 @@ def _apply_security_headers(resp):
             f"font-src 'self' https://cdn.jsdelivr.net https://fonts.gstatic.com data:; "
             f"img-src 'self' data: https: blob:; "
             f"connect-src 'self' https:; "
+            f"frame-src 'self' blob: data:; "
+            f"frame-ancestors 'self'; "
             f"object-src 'none'; "
             f"base-uri 'self';"
         )
@@ -342,6 +348,113 @@ def download_generated_file(file_id: str):
         abort(404)
     dl_name = file_id.split("_", 2)[-1] if "_" in file_id else file_id
     return send_from_directory(folder, file_id, as_attachment=True, download_name=dl_name)
+
+
+# --------------------------------------------------------------------------
+# Berbagi Halaman HTML Terproteksi Passcode (Shareable Protected HTML)
+# --------------------------------------------------------------------------
+SHARE_COOKIE_PREFIX = "bc_share_"
+
+
+def _sign_share_unlocked(share_id: str) -> str:
+    secret = os.getenv("APP_SECRET", "er-agent-share-secret-key")
+    return hashlib.sha256(f"unlocked_{share_id}_{secret}".encode()).hexdigest()[:16]
+
+
+def _is_share_unlocked(share_id: str) -> bool:
+    if _auth_state() == "ok" or _admin_auth_state() == "ok":
+        return True
+    c_val = request.cookies.get(f"{SHARE_COOKIE_PREFIX}{share_id}")
+    if c_val and c_val == _sign_share_unlocked(share_id):
+        return True
+    return False
+
+
+@app.post("/api/share/html")
+def api_share_html():
+    state = _auth_state()
+    if state != "ok" and _admin_auth_state() != "ok":
+        return _auth_error(state)
+    body = request.get_json(silent=True) or {}
+    html_content = (body.get("html") or "").strip()
+    if not html_content:
+        return jsonify(error="Konten HTML kosong."), 400
+    title = body.get("title", "")
+    chat_id = body.get("chat_id", "")
+    project_id = body.get("project_id", "")
+    base_url = request.host_url.rstrip("/")
+    res = share_store.create_share(
+        html=html_content,
+        title=title,
+        chat_id=chat_id,
+        project_id=project_id,
+        base_url=base_url
+    )
+    return jsonify(ok=True, share=res)
+
+
+@app.get("/share/html/<share_id>")
+def share_html_view(share_id: str):
+    data = share_store.get_share(share_id)
+    if not data:
+        abort(404)
+    unlocked = _is_share_unlocked(share_id)
+    return render_template(
+        "share_view.html",
+        csp_nonce=getattr(g, "csp_nonce", ""),
+        share_id=share_id,
+        title=data.get("title") or "Halaman Web",
+        unlocked=unlocked
+    )
+
+
+@app.post("/api/share/verify")
+def api_share_verify():
+    ip = _client_ip()
+    allowed, wait_sec = _check_rate_limit(f"share_{ip}", max_attempts=15, window_sec=600)
+    if not allowed:
+        return jsonify(ok=False, error=f"Terlalu banyak percobaan salah. Silakan coba lagi dalam {wait_sec} detik."), 429
+    body = request.get_json(silent=True) or {}
+    share_id = str(body.get("share_id", "")).strip()
+    passcode = str(body.get("passcode", "")).strip()
+    if not share_id or not passcode:
+        return jsonify(ok=False, error="Passcode wajib diisi."), 400
+
+    data = share_store.get_share(share_id)
+    if not data:
+        return jsonify(ok=False, error="Halaman tidak ditemukan."), 404
+
+    if share_store.verify_passcode(share_id, passcode):
+        resp = jsonify(ok=True)
+        tok = _sign_share_unlocked(share_id)
+        resp.set_cookie(f"{SHARE_COOKIE_PREFIX}{share_id}", tok, max_age=86400 * 7, httponly=True, samesite="Lax")
+        return resp
+    else:
+        return jsonify(ok=False, error="Passcode salah. Periksa kembali huruf dan angka."), 403
+
+
+@app.get("/share/raw/<share_id>")
+def share_raw_content(share_id: str):
+    data = share_store.get_share(share_id)
+    if not data:
+        abort(404)
+
+    candidate_pass = request.args.get("passcode", "")
+    if candidate_pass and share_store.verify_passcode(share_id, candidate_pass):
+        pass
+    elif not _is_share_unlocked(share_id):
+        abort(401)
+
+    html_content = data.get("html", "")
+    slug = data.get("slug", "halaman")
+    download = request.args.get("download") == "1"
+
+    resp = Response(html_content, mimetype="text/html; charset=utf-8")
+    if download:
+        resp.headers["Content-Disposition"] = f'attachment; filename="{slug}.html"'
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    resp.headers["X-Frame-Options"] = "SAMEORIGIN"
+    return resp
 
 
 @app.get("/api/config")

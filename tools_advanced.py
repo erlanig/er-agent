@@ -990,3 +990,34 @@ def create_powerpoint_pptx(filename: str, title: str, slides: list, subtitle: st
     except Exception as e:
         return {"error": f"Gagal membuat presentasi PowerPoint: {e}"}
 
+
+@tool(
+    "create_html_page",
+    "Buat dan publikasikan halaman web HTML interaktif yang dapat dipratinjau langsung serta dibagikan dengan tautan ber-passcode acak.",
+    {
+        "title": {"type": "string", "description": "Judul halaman web/aplikasi HTML."},
+        "html_content": {"type": "string", "description": "Kode HTML lengkap (termasuk tag <style> dan <script> bila ada)."}
+    },
+    ["title", "html_content"],
+    group="Dokumen & Berkas",
+)
+def create_html_page(title: str, html_content: str):
+    try:
+        import share_store
+        res = share_store.create_share(html=html_content, title=title)
+        return {
+            "ok": True,
+            "title": res["title"],
+            "share_url": res["path"],
+            "passcode": res["passcode"],
+            "pesan": (
+                f"Halaman HTML berhasil dibuat dan siap dibagikan!\n"
+                f"- Tautan Akses: {res['path']}\n"
+                f"- Passcode: {res['passcode']}\n"
+                f"Pengguna dapat membuka tautan di atas dan memasukkan passcode untuk melihat halaman."
+            )
+        }
+    except Exception as e:
+        return {"error": f"Gagal membuat halaman HTML: {e}"}
+
+
