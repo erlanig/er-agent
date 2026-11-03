@@ -701,8 +701,10 @@ function renderMarkdown(src){
   const prepared = parts.map((p, i) => {
     if(i % 2) return p;
     let text = extractMath(p, bag);
-    // Auto-linkify relative share links (/share/html/...) so marked renders an anchor tag
-    return text.replace(/(^|[\s(>])(\/share\/html\/[a-zA-Z0-9_\-?&=%#]+)/g, '$1[$2]($2)');
+    // Auto-linkify domain lengkap dan link relatif share / download agar marked menghasilkan <a> tag
+    text = text.replace(/(^|[\s(>])((?:https?:\/\/[^\s\/]+)?\/share\/html\/[a-zA-Z0-9_\-?&=%#]+)/g, '$1[$2]($2)');
+    text = text.replace(/(^|[\s(>])((?:https?:\/\/[^\s\/]+)?\/api\/download\/[a-zA-Z0-9_\-.]+)/g, '$1[$2]($2)');
+    return text;
   }).join('');
   let html = DOMPurify.sanitize(marked.parse(prepared, {gfm: true, breaks: true}));
   return html.replace(/%%MATH(\d+)%%/g, (_, i) => bag[+i] ?? '');
@@ -835,7 +837,11 @@ function enhance(root, live){
     const parentMsg = a.closest('.msg.bot');
     if(!parentMsg || parentMsg.querySelector('.share-link-card')) return;
     
-    const href = a.getAttribute('href');
+    let href = a.getAttribute('href') || '';
+    const fullHref = href.startsWith('http') ? href : ('https://er-agent-inky.vercel.app' + href);
+    a.setAttribute('href', fullHref);
+    a.textContent = fullHref;
+    
     const msgText = parentMsg.textContent || '';
     const passMatch = msgText.match(/(?:passcode|kode(?:\s*akses)?)\s*[:=]\s*([A-Za-z0-9]{4,10})/i);
     const passcode = passMatch ? passMatch[1].toUpperCase() : '';
@@ -846,7 +852,12 @@ function enhance(root, live){
     const head = el('div', 'share-card-header');
     const titleBox = el('div', 'share-card-title');
     titleBox.append(ico('globe', 16), el('span', '', 'Halaman Web Terproteksi'));
-    head.append(titleBox);
+    
+    const cpUrlBtn = el('button', 'tbl-btn', 'Salin Tautan');
+    cpUrlBtn.type = 'button';
+    cpUrlBtn.prepend(ico('copy', 12));
+    cpUrlBtn.onclick = () => copyText(fullHref, cpUrlBtn);
+    head.append(titleBox, cpUrlBtn);
 
     const body = el('div', 'share-card-body');
     const passWrap = el('div', 'share-card-pass-wrap');
@@ -864,7 +875,7 @@ function enhance(root, live){
     
     const actions = el('div', 'share-card-actions');
     const openBtn = el('a', 'btn primary', 'Buka Halaman');
-    openBtn.href = href;
+    openBtn.href = fullHref;
     openBtn.target = '_blank';
     openBtn.rel = 'noopener noreferrer';
     openBtn.style.textDecoration = 'none';

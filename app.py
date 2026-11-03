@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 
 load_dotenv()  # baca .env saat lokal; di Vercel dipakai Environment Variables
 
-from flask import Flask, Response, abort, g, jsonify, render_template, request, send_from_directory, stream_with_context  # noqa: E402
+from flask import Flask, Response, abort, g, jsonify, render_template, request, send_file, send_from_directory, stream_with_context  # noqa: E402
 
 import approvals  # noqa: E402
 import db  # noqa: E402
@@ -352,12 +352,34 @@ def download_generated_file(file_id: str):
         return _auth_error(state)
     if not re.fullmatch(r"[\w.\-]+", file_id):
         abort(400)
-    folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), "generated_files")
-    filepath = os.path.join(folder, file_id)
-    if not os.path.isfile(filepath):
-        abort(404)
-    dl_name = file_id.split("_", 2)[-1] if "_" in file_id else file_id
-    return send_from_directory(folder, file_id, as_attachment=True, download_name=dl_name)
+
+    # 1. Cek dari Postgres database terlebih dahulu bila db aktif (Vercel Serverless safe)
+    if db.enabled():
+        try:
+            row = db.get_generated_file(file_id)
+            if row and row.get("data"):
+                return send_file(
+                    io.BytesIO(row["data"]),
+                    as_attachment=True,
+                    download_name=row.get("filename") or file_id,
+                    mimetype=row.get("content_type") or "application/octet-stream",
+                )
+        except Exception:
+            pass
+
+    # 2. Cek direktori writable /tmp dan local generated_files
+    import tempfile
+    folders = [
+        os.path.join(tempfile.gettempdir(), "er_generated"),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "generated_files"),
+    ]
+    for folder in folders:
+        filepath = os.path.join(folder, file_id)
+        if os.path.isfile(filepath):
+            dl_name = file_id.split("_", 2)[-1] if "_" in file_id else file_id
+            return send_from_directory(folder, file_id, as_attachment=True, download_name=dl_name)
+
+    abort(404)
 
 
 # --------------------------------------------------------------------------
@@ -392,7 +414,19 @@ def api_share_html():
     title = body.get("title", "")
     chat_id = body.get("chat_id", "")
     project_id = body.get("project_id", "")
-    base_url = request.host_url.rstrip("/")
+    
+    # Prioritaskan domain publik Vercel agar link selalu lengkap dengan https://
+    f_proto = request.headers.get("X-Forwarded-Proto", "https")
+    f_host = request.headers.get("X-Forwarded-Host", "")
+    if f_host:
+        base_url = f"{f_proto}://{f_host}"
+    elif os.getenv("APP_BASE_URL"):
+        base_url = os.environ["APP_BASE_URL"].rstrip("/")
+    elif "localhost" not in request.host and "127.0.0.1" not in request.host:
+        base_url = request.host_url.rstrip("/")
+    else:
+        base_url = "https://er-agent-inky.vercel.app"
+
     res = share_store.create_share(
         html=html_content,
         title=title,

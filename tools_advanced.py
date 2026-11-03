@@ -614,19 +614,57 @@ def code_diff_analyzer(original_code: str, modified_code: str, filename: str = "
 
 
 # --------------------------------------------------------------------------
-# 5. PEMBUATAN DOKUMEN & BERKAS (DOCS, EXCEL, PDF, PPT)
+# 5. PEMBUATAN DOKUMEN & BERKAS (DOCS, EXCEL, PDF, PPT) - VERCEL SAFE DUAL-STORAGE
 # --------------------------------------------------------------------------
-_GEN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "generated_files")
+import secrets
+import tempfile
+import db
+
+_cached_gen_dir: str | None = None
+
+def _get_gen_dir() -> str:
+    global _cached_gen_dir
+    if _cached_gen_dir:
+        return _cached_gen_dir
+    local_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "generated_files")
+    try:
+        os.makedirs(local_dir, exist_ok=True)
+        test_file = os.path.join(local_dir, ".test")
+        with open(test_file, "w") as f:
+            f.write("1")
+        os.remove(test_file)
+        _cached_gen_dir = local_dir
+        return local_dir
+    except Exception:
+        tmp_dir = os.path.join(tempfile.gettempdir(), "er_generated")
+        os.makedirs(tmp_dir, exist_ok=True)
+        _cached_gen_dir = tmp_dir
+        return tmp_dir
 
 def _prepare_gen_file(filename: str) -> tuple[str, str, str]:
-    os.makedirs(_GEN_DIR, exist_ok=True)
+    folder = _get_gen_dir()
     clean_name = re.sub(r"[^\w.\-]+", "_", filename).strip("_") or "dokumen"
     fid = f"{int(time.time())}_{secrets.token_hex(4)}_{clean_name}"
-    filepath = os.path.join(_GEN_DIR, fid)
+    filepath = os.path.join(folder, fid)
     return fid, clean_name, filepath
 
+def _save_generated_file(fid: str, clean_name: str, filepath: str, content_type: str) -> None:
+    try:
+        with open(filepath, "rb") as f:
+            file_bytes = f.read()
+        if db.enabled():
+            try:
+                db.upsert_generated_file(fid, clean_name, content_type, file_bytes)
+            except Exception:
+                pass
+    except Exception:
+        pass
 
-import secrets
+def _resolve_download_url(fid: str) -> tuple[str, str]:
+    base = (os.getenv("APP_BASE_URL") or "https://er-agent-inky.vercel.app").rstrip("/")
+    rel_url = f"/api/download/{fid}"
+    full_url = f"{base}{rel_url}"
+    return rel_url, full_url
 
 
 @tool(
@@ -712,12 +750,14 @@ def create_word_docx(filename: str, title: str, sections: list):
                     doc.add_paragraph().paragraph_format.space_after = Pt(8)
 
         doc.save(path)
-        url = f"/api/download/{fid}"
+        _save_generated_file(fid, clean_name, path, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        rel_url, full_url = _resolve_download_url(fid)
         return {
             "ok": True,
             "filename": clean_name,
-            "download_url": url,
-            "pesan": f"Dokumen Word berhasil dibuat: [{clean_name}]({url})"
+            "download_url": full_url,
+            "path": rel_url,
+            "pesan": f"Dokumen Word berhasil dibuat: [{clean_name}]({full_url})\nTautan Unduh: {full_url}"
         }
     except Exception as e:
         return {"error": f"Gagal membuat dokumen Word: {e}"}
@@ -802,12 +842,14 @@ def create_excel_xlsx(filename: str, sheets: dict):
                 ws.column_dimensions[col_letter].width = max(max_len + 3, 12)
 
         wb.save(path)
-        url = f"/api/download/{fid}"
+        _save_generated_file(fid, clean_name, path, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        rel_url, full_url = _resolve_download_url(fid)
         return {
             "ok": True,
             "filename": clean_name,
-            "download_url": url,
-            "pesan": f"Berkas Excel berhasil dibuat: [{clean_name}]({url})"
+            "download_url": full_url,
+            "path": rel_url,
+            "pesan": f"Berkas Excel berhasil dibuat: [{clean_name}]({full_url})\nTautan Unduh: {full_url}"
         }
     except Exception as e:
         return {"error": f"Gagal membuat berkas Excel: {e}"}
@@ -911,12 +953,14 @@ def create_pdf_doc(filename: str, title: str, content_blocks: list):
                     elements.append(Spacer(1, 8))
 
         doc.build(elements)
-        url = f"/api/download/{fid}"
+        _save_generated_file(fid, clean_name, path, "application/pdf")
+        rel_url, full_url = _resolve_download_url(fid)
         return {
             "ok": True,
             "filename": clean_name,
-            "download_url": url,
-            "pesan": f"Dokumen PDF berhasil dibuat: [{clean_name}]({url})"
+            "download_url": full_url,
+            "path": rel_url,
+            "pesan": f"Dokumen PDF berhasil dibuat: [{clean_name}]({full_url})\nTautan Unduh: {full_url}"
         }
     except Exception as e:
         return {"error": f"Gagal membuat dokumen PDF: {e}"}
@@ -980,12 +1024,14 @@ def create_powerpoint_pptx(filename: str, title: str, slides: list, subtitle: st
                 tf.text = str(s_data.get("text"))
 
         prs.save(path)
-        url = f"/api/download/{fid}"
+        _save_generated_file(fid, clean_name, path, "application/vnd.openxmlformats-officedocument.presentationml.presentation")
+        rel_url, full_url = _resolve_download_url(fid)
         return {
             "ok": True,
             "filename": clean_name,
-            "download_url": url,
-            "pesan": f"Presentasi PowerPoint berhasil dibuat: [{clean_name}]({url})"
+            "download_url": full_url,
+            "path": rel_url,
+            "pesan": f"Presentasi PowerPoint berhasil dibuat: [{clean_name}]({full_url})\nTautan Unduh: {full_url}"
         }
     except Exception as e:
         return {"error": f"Gagal membuat presentasi PowerPoint: {e}"}
@@ -1005,16 +1051,18 @@ def create_html_page(title: str, html_content: str):
     try:
         import share_store
         res = share_store.create_share(html=html_content, title=title)
+        full_url = res.get("full_url") or f"https://er-agent-inky.vercel.app{res['path']}"
         return {
             "ok": True,
             "title": res["title"],
-            "share_url": res["path"],
+            "share_url": full_url,
+            "path": res["path"],
             "passcode": res["passcode"],
             "pesan": (
                 f"Halaman HTML berhasil dibuat dan siap dibagikan!\n"
-                f"- Tautan Akses: {res['path']}\n"
+                f"- Tautan Akses: {full_url}\n"
                 f"- Passcode: {res['passcode']}\n"
-                f"Pengguna dapat membuka tautan di atas dan memasukkan passcode untuk melihat halaman."
+                f"Pengguna dapat langsung mengklik tautan di atas dan memasukkan passcode untuk melihat halaman."
             )
         }
     except Exception as e:

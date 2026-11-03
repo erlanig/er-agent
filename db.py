@@ -6,6 +6,7 @@
 - Tabel dibuat otomatis saat pertama kali dipakai.
 """
 import os
+import time
 
 _ready = False
 
@@ -35,6 +36,10 @@ def _ensure(conn) -> None:
     conn.execute(
         "CREATE TABLE IF NOT EXISTS shares ("
         "id text PRIMARY KEY, passcode text NOT NULL, title text, data jsonb NOT NULL, created_at bigint NOT NULL DEFAULT 0)"
+    )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS generated_files ("
+        "id text PRIMARY KEY, filename text NOT NULL, content_type text NOT NULL, data bytea NOT NULL, created_at bigint NOT NULL DEFAULT 0)"
     )
     _ready = True
 
@@ -95,3 +100,33 @@ def get_share(share_id: str) -> dict | None:
         _ensure(conn)
         row = conn.execute("SELECT data FROM shares WHERE id = %s", (share_id,)).fetchone()
         return row[0] if row else None
+
+
+def upsert_generated_file(file_id: str, filename: str, content_type: str, data: bytes) -> None:
+    with _connect() as conn:
+        _ensure(conn)
+        conn.execute(
+            "INSERT INTO generated_files (id, filename, content_type, data, created_at) VALUES (%s, %s, %s, %s, %s) "
+            "ON CONFLICT (id) DO UPDATE SET filename = EXCLUDED.filename, content_type = EXCLUDED.content_type, data = EXCLUDED.data",
+            (file_id, filename, content_type, data, int(time.time())),
+        )
+
+
+def get_generated_file(file_id: str) -> dict | None:
+    with _connect() as conn:
+        _ensure(conn)
+        row = conn.execute(
+            "SELECT filename, content_type, data FROM generated_files WHERE id = %s",
+            (file_id,),
+        ).fetchone()
+        if row:
+            raw_data = row[2]
+            # Handle memoryview/bytes from psycopg
+            data_bytes = bytes(raw_data) if raw_data is not None else b""
+            return {
+                "filename": row[0],
+                "content_type": row[1],
+                "data": data_bytes,
+            }
+        return None
+

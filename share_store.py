@@ -86,7 +86,9 @@ def create_share(
 
     query_str = f"project={clean_proj}&chat={clean_chat}&title={slug}&ref=er-agent"
     path = f"/share/html/{share_id}?{query_str}"
-    full_url = f"{base_url.rstrip('/')}{path}" if base_url else path
+    default_base = os.getenv("APP_BASE_URL") or "https://er-agent-inky.vercel.app"
+    effective_base = (base_url or default_base).rstrip("/")
+    full_url = f"{effective_base}{path}"
 
     return {
         "id": share_id,

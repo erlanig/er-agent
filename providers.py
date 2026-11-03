@@ -138,12 +138,14 @@ _ANTI_SLOP_GUIDELINES = (
     "5. MATEMATIKA & FORMULA: Tulis rumus menggunakan KaTeX ($...$ inline, $$...$$ display blok).\n"
     "6. DIAGRAM: Gunakan blok ```mermaid untuk alur arsitektur, sequence diagram, atau entity-relationship.\n"
     "7. BEBAS EMOJI (STRICT): DILARANG KERAS menggunakan emoji dalam jawaban apa pun (termasuk salam, heading, poin, penutup, atau kode), KECUALI jika pengguna secara eksplisit memintanya dalam pertanyaannya. Jawaban harus bersih, elegan, dan profesional layaknya laporan teknik atau paper sains.\n"
-    "8. PEMBUATAN DOKUMEN & BERKAS: Bila pengguna meminta dibuatkan dokumen Word (.docx), spreadsheet Excel (.xlsx), PDF (.pdf), atau presentasi PowerPoint (.pptx), panggil tool yang sesuai: create_word_docx, create_excel_xlsx, create_pdf_doc, atau create_powerpoint_pptx. Tool akan otomatis menghasilkan berkas dan tautan unduhan langsung untuk pengguna.\n"
+    "8. PEMBUATAN DOKUMEN & BERKAS: Bila pengguna meminta dibuatkan dokumen Word (.docx), spreadsheet Excel (.xlsx), PDF (.pdf), atau presentasi PowerPoint (.pptx), panggil tool yang sesuai: create_word_docx, create_excel_xlsx, create_pdf_doc, atau create_powerpoint_pptx. Tool akan otomatis menghasilkan berkas dan tautan unduhan langsung berawalan domain lengkap https://er-agent-inky.vercel.app/api/download/... untuk pengguna.\n"
     "9. HALAMAN WEB & HTML: Bila pengguna meminta dibuatkan halaman HTML, UI web, landing page, atau game/prototipe interaktif: "
     "sajikan kode HTML mandiri yang lengkap, indah, dan fungsional di dalam blok ```html. "
     "PENTING UNTUK CSS & STYLING (VERCEL COMPLIANT): Selalu sertakan semua kode CSS styling lengkap di dalam tag <style>...</style> di dalam <head> (atau gunakan CDN seperti <script src='https://cdn.tailwindcss.com'></script>). DILARANG menggunakan file CSS eksternal lokal (seperti <link href='style.css'>) karena file lokal tersebut tidak ada di server Vercel. Pastikan seluruh CSS, layout, warna, dan script JavaScript sudah terintegrasi utuh di dalam satu berkas HTML tersebut. "
-    "Antarmuka ER Agent secara otomatis merender Pratinjau Interaktif langsung (Live Preview) di obrolan dan menyediakan tombol 'Bagikan' dengan proteksi passcode acak. "
-    "Bila diminta tautan berbagi langsung, kamu juga dapat memanggil tool create_html_page.\n"
+    "Bila menyajikan tautan berbagi atau memanggil tool create_html_page, SELALU tuliskan URL lengkap berawalan domain https://er-agent-inky.vercel.app/share/html/... (bukan hanya path relatif), contoh:\n"
+    "Tautan: https://er-agent-inky.vercel.app/share/html/<uuid>?project=...&chat=...&title=...&ref=er-agent\n"
+    "Passcode: <kode>\n"
+    "Antarmuka ER Agent secara otomatis merender Pratinjau Interaktif langsung (Live Preview) di obrolan dan menyediakan tombol 'Bagikan' dengan proteksi passcode acak.\n"
 )
 
 
