@@ -765,9 +765,10 @@ def chat():
 # --------------------------------------------------------------------------
 @app.get("/api/pentest/status")
 def pentest_status():
+    custom_key = (request.headers.get("X-DeepSeek-Key") or request.args.get("api_key") or "").strip()
     return jsonify(
         ok=True,
-        configured=pentest_engine.is_configured(),
+        configured=pentest_engine.is_configured(custom_api_key=custom_key),
         default_model=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
     )
 
@@ -783,6 +784,7 @@ def pentest_chat():
     model = body.get("model") or "deepseek-chat"
     system_instruction = body.get("instructions") or ""
     mode = body.get("mode") or "general"
+    custom_key = (request.headers.get("X-DeepSeek-Key") or body.get("api_key") or "").strip()
 
     if not messages:
         return jsonify(error="Daftar pesan tidak boleh kosong."), 400
@@ -794,6 +796,7 @@ def pentest_chat():
                 model=model,
                 system_instruction=system_instruction,
                 mode=mode,
+                custom_api_key=custom_key,
             ):
                 yield json.dumps(ev, ensure_ascii=False) + "\n"
         except Exception as e:
