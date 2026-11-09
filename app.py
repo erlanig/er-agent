@@ -20,6 +20,7 @@ from flask import Flask, Response, abort, g, jsonify, render_template, request, 
 import approvals  # noqa: E402
 import db  # noqa: E402
 import legal  # noqa: E402
+import pentest_engine  # noqa: E402
 from providers import MODELS, diagnose, run_chat  # noqa: E402
 import settings_store  # noqa: E402
 import share_store  # noqa: E402
@@ -320,6 +321,15 @@ def index():
 @app.get("/admin")
 def admin_page():
     return render_template("admin.html", csp_nonce=getattr(g, "csp_nonce", ""))
+
+
+@app.get("/pentest")
+def pentest_page():
+    return render_template(
+        "pentest.html",
+        csp_nonce=getattr(g, "csp_nonce", ""),
+        configured=pentest_engine.is_configured(),
+    )
 
 
 def _asset(name: str):
@@ -739,6 +749,53 @@ def chat():
                 datasets=datasets,
             ):
                 yield json.dumps(event, ensure_ascii=False) + "\n"
+        except Exception as e:
+            yield json.dumps({"type": "error", "message": f"{type(e).__name__}: {e}"}, ensure_ascii=False) + "\n"
+        yield json.dumps({"type": "done"}) + "\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="application/x-ndjson",
+        headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
+    )
+
+
+# --------------------------------------------------------------------------
+# API PENTEST & SECURITY LAB (DeepSeek Engine)
+# --------------------------------------------------------------------------
+@app.get("/api/pentest/status")
+def pentest_status():
+    return jsonify(
+        ok=True,
+        configured=pentest_engine.is_configured(),
+        default_model=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
+    )
+
+
+@app.post("/api/pentest/chat")
+def pentest_chat():
+    state = _auth_state()
+    if state != "ok":
+        return _auth_error(state)
+
+    body = request.get_json(silent=True) or {}
+    messages = body.get("messages") or []
+    model = body.get("model") or "deepseek-chat"
+    system_instruction = body.get("instructions") or ""
+    mode = body.get("mode") or "general"
+
+    if not messages:
+        return jsonify(error="Daftar pesan tidak boleh kosong."), 400
+
+    def generate():
+        try:
+            for ev in pentest_engine.stream_pentest(
+                messages=messages,
+                model=model,
+                system_instruction=system_instruction,
+                mode=mode,
+            ):
+                yield json.dumps(ev, ensure_ascii=False) + "\n"
         except Exception as e:
             yield json.dumps({"type": "error", "message": f"{type(e).__name__}: {e}"}, ensure_ascii=False) + "\n"
         yield json.dumps({"type": "done"}) + "\n"
