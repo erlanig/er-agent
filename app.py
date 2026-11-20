@@ -810,6 +810,29 @@ def pentest_chat():
     )
 
 
+@app.post("/api/pentest/scan")
+def pentest_scan():
+    state = _auth_state()
+    if state != "ok":
+        return _auth_error(state)
+
+    body = request.get_json(silent=True) or {}
+    url = (body.get("url") or "").strip()
+    if not url:
+        return jsonify(error="URL target pemindaian tidak boleh kosong."), 400
+
+    scan_res = pentest_engine.scan_target_url(url)
+    if not scan_res.get("ok"):
+        return jsonify(error=scan_res.get("error", "Gagal memindai target.")), 400
+
+    prompt = pentest_engine.format_scan_prompt(scan_res)
+    return jsonify(
+        ok=True,
+        scan=scan_res,
+        prompt=prompt,
+    )
+
+
 # --------------------------------------------------------------------------
 # API ADMIN (Pengaturan Sistem, Passcode, Diagnostik, Audit Log)
 # --------------------------------------------------------------------------
